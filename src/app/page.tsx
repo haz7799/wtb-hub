@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Heart, CheckSquare, Calendar, Settings, Plus, MapPin, X, ExternalLink, Map, Trash2, Edit3, Navigation, Clock, Utensils, Search, ThumbsUp, ThumbsDown, User, Briefcase, Bell, Moon, ChevronRight } from 'lucide-react';
+import { Heart, CheckSquare, Calendar, Settings, Plus, MapPin, X, ExternalLink, Map, Trash2, Edit3, Navigation, Clock, Utensils, Search, ThumbsUp, ThumbsDown, User, Briefcase, Bell, Moon, ChevronRight, Filter } from 'lucide-react';
 import { collection, onSnapshot, query, doc, deleteDoc, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import EntryModal from '@/components/EntryModal';
@@ -22,16 +22,8 @@ const SUB_TABS = {
 };
 
 const THIRD_TIER_FILTERS: Record<string, any[]> = {
-  '拔草': [
-    { label: '全部', value: 'all' }, 
-    { label: '推薦', value: 'recommend', icon: ThumbsUp }, 
-    { label: '不推', value: 'not_recommend', icon: ThumbsDown }
-  ],
-  '行事曆': [
-    { label: '全部', value: 'all' }, 
-    { label: '個人', value: 'personal', icon: User }, 
-    { label: '公司', value: 'company', icon: Briefcase }
-  ]
+  '拔草': [{ label: '全部', value: 'all' }, { label: '推薦', value: 'recommend', icon: ThumbsUp }, { label: '不推', value: 'not_recommend', icon: ThumbsDown }],
+  '行事曆': [{ label: '全部', value: 'all' }, { label: '個人', value: 'personal', icon: User }, { label: '公司', value: 'company', icon: Briefcase }]
 };
 
 export default function Home() {
@@ -39,6 +31,12 @@ export default function Home() {
   const [activeSubTab, setActiveSubTab] = useState(SUB_TABS['種草'][0]);
   const [activeFilter, setActiveFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
+  
+  // 🌟 進階下拉選單篩選器
+  const [selectedFilterCountry, setSelectedFilterCountry] = useState('');
+  const [selectedFilterRegion, setSelectedFilterRegion] = useState('');
+  const [selectedFilterDish, setSelectedFilterDish] = useState('');
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [entries, setEntries] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -56,21 +54,38 @@ export default function Home() {
     return () => unsubscribe();
   }, []);
 
+  // 動態抓取所有已存在的選項，用來填入篩選下拉選單
+  const availableCountries = Array.from(new Set(entries.map(e => e.tags?.country).filter(Boolean)));
+  const availableRegions = Array.from(new Set(entries.map(e => e.tags?.region).filter(Boolean)));
+  const availableDishTypes = Array.from(new Set(entries.map(e => e.tags?.dishType).filter(Boolean)));
+
   const handleMainTabChange = (tab: any) => {
     setActiveMainTab(tab);
     setActiveSubTab(SUB_TABS[tab.id as keyof typeof SUB_TABS][0]);
     setActiveFilter('all');
     setSearchQuery('');
+    setSelectedFilterCountry('');
+    setSelectedFilterRegion('');
+    setSelectedFilterDish('');
   };
 
   const filteredEntries = entries.filter(entry => {
     if (activeMainTab.id === '設定') return false;
     const isTabMatch = entry.type === activeMainTab.type && entry.category === activeSubTab.value;
     if (!isTabMatch) return false;
+    
+    // 評價/個人公司過濾
     if (activeFilter !== 'all') {
       if (activeMainTab.id === '拔草' && entry.tags?.recommendation !== activeFilter) return false;
       if (activeMainTab.id === '行事曆' && entry.tags?.eventType !== activeFilter) return false;
     }
+
+    // 🌟 進階下拉選單過濾
+    if (selectedFilterCountry && entry.tags?.country !== selectedFilterCountry) return false;
+    if (selectedFilterRegion && entry.tags?.region !== selectedFilterRegion) return false;
+    if (selectedFilterDish && entry.tags?.dishType !== selectedFilterDish) return false;
+
+    // 關鍵字搜尋過濾
     if (searchQuery.trim()) {
       const lowerQuery = searchQuery.toLowerCase();
       return (
@@ -117,11 +132,30 @@ export default function Home() {
       </header>
 
       {activeMainTab.id !== '設定' && (
-        <div className="px-6 mb-4">
+        <div className="px-6 mb-3 space-y-3">
           <div className="relative">
             <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
             <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="搜尋店名、地區或事項..." className="w-full bg-white border border-gray-100 rounded-full py-2.5 pl-11 pr-4 text-sm focus:outline-none focus:border-pink-200 focus:ring-1 focus:ring-pink-200 transition-all shadow-sm text-gray-600 placeholder:text-gray-300" />
             {searchQuery && <button onClick={() => setSearchQuery('')} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500"><X size={16} /></button>}
+          </div>
+
+          {/* 🌟 橫向捲動的進階篩選器 */}
+          <div className="flex space-x-2 overflow-x-auto scrollbar-hide pb-1">
+            <div className="flex items-center shrink-0 text-gray-400 bg-white border border-gray-100 px-3 py-1.5 rounded-full shadow-sm">
+              <Filter size={14} className="mr-1.5" /> <span className="text-xs font-bold">篩選</span>
+            </div>
+            <select value={selectedFilterCountry} onChange={(e) => setSelectedFilterCountry(e.target.value)} className="shrink-0 bg-white border border-gray-100 text-gray-500 text-xs font-bold rounded-full px-3 py-1.5 focus:outline-none shadow-sm appearance-none">
+              <option value="">所有國家</option>
+              {availableCountries.map(c => <option key={c as string} value={c as string}>{c as string}</option>)}
+            </select>
+            <select value={selectedFilterRegion} onChange={(e) => setSelectedFilterRegion(e.target.value)} className="shrink-0 bg-white border border-gray-100 text-gray-500 text-xs font-bold rounded-full px-3 py-1.5 focus:outline-none shadow-sm appearance-none">
+              <option value="">所有地區</option>
+              {availableRegions.map(r => <option key={r as string} value={r as string}>{r as string}</option>)}
+            </select>
+            <select value={selectedFilterDish} onChange={(e) => setSelectedFilterDish(e.target.value)} className="shrink-0 bg-white border border-gray-100 text-gray-500 text-xs font-bold rounded-full px-3 py-1.5 focus:outline-none shadow-sm appearance-none">
+              <option value="">所有類別</option>
+              {availableDishTypes.map(d => <option key={d as string} value={d as string}>{d as string}</option>)}
+            </select>
           </div>
         </div>
       )}
@@ -177,8 +211,8 @@ export default function Home() {
             <div className="text-center text-gray-400 py-10 animate-pulse">魔法載入中... 🪄</div>
           ) : filteredEntries.length === 0 ? (
             <div className="bg-white rounded-3xl p-8 text-center shadow-sm min-h-[250px] flex flex-col items-center justify-center">
-              <div className="text-4xl mb-3">{searchQuery || activeFilter !== 'all' ? '🔍' : '🪹'}</div>
-              <p className="text-gray-400 text-sm">{searchQuery || activeFilter !== 'all' ? '找不到符合條件的紀錄唷！' : '這裡還空空的唷，快點擊右下角新增吧！'}</p>
+              <div className="text-4xl mb-3">{searchQuery || activeFilter !== 'all' || selectedFilterCountry ? '🔍' : '🪹'}</div>
+              <p className="text-gray-400 text-sm">{searchQuery || activeFilter !== 'all' || selectedFilterCountry ? '找不到符合條件的紀錄唷！' : '這裡還空空的唷，快點擊右下角新增吧！'}</p>
             </div>
           ) : (
             <AnimatePresence>
@@ -197,18 +231,16 @@ export default function Home() {
                   <div className="flex-1 min-w-0">
                     <h3 className="font-bold text-[#585C64] truncate mb-1">{item.title}</h3>
                     <div className="flex flex-wrap gap-1.5 mb-2 mt-1">
-                    {item.tags?.country && <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-pink-50 text-pink-500 shadow-sm"><MapPin size={10} className="mr-0.5" /> {item.tags.country}</span>}
-                    {/* 👇 新增顯示詳細地區 */}
-                    {item.tags?.region && <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-500 shadow-sm">{item.tags.region}</span>}
-                    {/* 👇 新增顯示菜式分類 */}
-                    {item.tags?.dishType && <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-gray-100 text-gray-600 shadow-sm">{item.tags.dishType}</span>}
-                    
-                    {item.tags?.closedDays && item.tags.closedDays.length > 0 && (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-red-50 text-red-500 shadow-sm">休週{item.tags.closedDays.join('、')}</span>
-                    )}
-                    {item.tags?.eventType === 'personal' && <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-500 shadow-sm"><User size={10} className="mr-1"/> 個人</span>}
-                    {item.tags?.eventType === 'company' && <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-orange-50 text-orange-500 shadow-sm"><Briefcase size={10} className="mr-1"/> 公司</span>}
-                  </div>
+                      {item.tags?.country && <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-pink-50 text-pink-500 shadow-sm"><MapPin size={10} className="mr-0.5" /> {item.tags.country}</span>}
+                      {item.tags?.region && <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-500 shadow-sm">{item.tags.region}</span>}
+                      {item.tags?.dishType && <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-gray-100 text-gray-600 shadow-sm">{item.tags.dishType}</span>}
+                      
+                      {item.tags?.closedDays && item.tags.closedDays.length > 0 && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-red-50 text-red-500 shadow-sm">休週{item.tags.closedDays.join('、')}</span>
+                      )}
+                      {item.tags?.eventType === 'personal' && <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-500 shadow-sm"><User size={10} className="mr-1"/> 個人</span>}
+                      {item.tags?.eventType === 'company' && <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-orange-50 text-orange-500 shadow-sm"><Briefcase size={10} className="mr-1"/> 公司</span>}
+                    </div>
                   </div>
 
                   <button onClick={(e) => handleToggleStatus(e, item)} className={`w-9 h-9 rounded-full border-2 flex items-center justify-center transition-all shadow-sm z-10 shrink-0 ${item.type === 'done' || item.category === 'done' ? 'bg-pink-400 border-pink-400 text-white hover:bg-pink-500' : 'border-[#F3E0E2] text-gray-300 hover:text-pink-400 hover:bg-pink-50'}`}>
@@ -242,29 +274,25 @@ export default function Home() {
         </div>
       </nav>
 
-      <EntryModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} editData={editEntry} />
+      {/* 傳遞 currentMainTab 與 currentSubTab 給 Modal，讓它動態變更標題 */}
+      <EntryModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} editData={editEntry} currentMainTab={activeMainTab.id} currentSubTab={activeSubTab.value} />
 
-      {/* 🔮 終極版詳細資訊視窗 (所有資訊全部回歸！) */}
       <AnimatePresence>
         {selectedEntry && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
             <motion.div initial={{ opacity: 0, scale: 0.9, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.9, y: 20 }} className="bg-white w-full max-w-sm rounded-[2rem] overflow-hidden shadow-2xl relative flex flex-col max-h-[85vh]">
-              
               <div className="absolute top-4 right-4 z-10 flex space-x-2">
                 <button onClick={() => handleEdit(selectedEntry)} className="w-9 h-9 bg-white/80 backdrop-blur-md rounded-full text-blue-500 flex items-center justify-center shadow-sm"><Edit3 size={16} /></button>
                 <button onClick={() => handleDelete(selectedEntry.id)} className="w-9 h-9 bg-white/80 backdrop-blur-md rounded-full text-red-500 flex items-center justify-center shadow-sm"><Trash2 size={16} /></button>
                 <button onClick={() => setSelectedEntry(null)} className="w-9 h-9 bg-black/50 backdrop-blur-md rounded-full text-white flex items-center justify-center shadow-sm"><X size={18} /></button>
               </div>
-
               <div className="w-full h-56 bg-gray-100 relative shrink-0">
                 {selectedEntry.images && selectedEntry.images.length > 0 ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={selectedEntry.images[0]} alt="圖片" className="w-full h-full object-cover" onError={(e) => { e.currentTarget.src = 'https://placehold.co/400x300/F9F7F7/D1D9E6?text=No+Img'; }} />
                 ) : <div className="w-full h-full flex items-center justify-center text-4xl text-gray-300">🩰</div>}
               </div>
-
               <div className="p-6 overflow-y-auto bg-white">
-                {/* 1. 標題與標籤區塊 */}
                 <div className="mb-6">
                   <h2 className="text-2xl font-black text-[#585C64] mb-3 leading-snug tracking-wide">{selectedEntry.title}</h2>
                   <div className="flex flex-wrap gap-2">
@@ -276,10 +304,7 @@ export default function Home() {
                   </div>
                 </div>
 
-                {/* 2. 結構化資訊卡片 */}
                 <div className="bg-[#F9F7F7] rounded-2xl p-5 space-y-5 mb-6 border border-gray-100">
-                  
-                  {/* 評價 */}
                   {selectedEntry.tags?.recommendation && (
                     <div className="flex items-start">
                       <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 mr-3 mt-0.5 ${selectedEntry.tags.recommendation === 'recommend' ? 'bg-pink-100 text-pink-500' : 'bg-gray-200 text-gray-500'}`}>
@@ -292,16 +317,16 @@ export default function Home() {
                     </div>
                   )}
 
-                  {/* 推薦菜式 */}
-                  <div className="flex items-start">
-                    <div className="w-8 h-8 rounded-full bg-orange-100 text-orange-500 flex items-center justify-center shrink-0 mr-3 mt-0.5"><Utensils size={14}/></div>
-                    <div>
-                      <p className="text-[10px] font-bold text-gray-400 mb-0.5 tracking-widest">推薦菜式 / 類別</p>
-                      <p className="text-sm font-bold text-[#585C64]">{selectedEntry.tags?.dishType || '未指定'}</p>
+                  {selectedEntry.tags?.dishType && (
+                    <div className="flex items-start">
+                      <div className="w-8 h-8 rounded-full bg-orange-100 text-orange-500 flex items-center justify-center shrink-0 mr-3 mt-0.5"><Utensils size={14}/></div>
+                      <div>
+                        <p className="text-[10px] font-bold text-gray-400 mb-0.5 tracking-widest">推薦分類</p>
+                        <p className="text-sm font-bold text-[#585C64]">{selectedEntry.tags?.dishType}</p>
+                      </div>
                     </div>
-                  </div>
+                  )}
 
-                  {/* 固定公休日 */}
                   {selectedEntry.tags?.closedDays && selectedEntry.tags.closedDays.length > 0 && (
                     <div className="flex items-start">
                       <div className="w-8 h-8 rounded-full bg-red-100 text-red-500 flex items-center justify-center shrink-0 mr-3 mt-0.5"><Calendar size={14}/></div>
@@ -312,16 +337,16 @@ export default function Home() {
                     </div>
                   )}
 
-                  {/* 營業時間 */}
-                  <div className="flex items-start">
-                    <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-500 flex items-center justify-center shrink-0 mr-3 mt-0.5"><Clock size={14}/></div>
-                    <div>
-                      <p className="text-[10px] font-bold text-gray-400 mb-0.5 tracking-widest">營業時間</p>
-                      <p className="text-sm font-bold text-[#585C64] leading-relaxed">{selectedEntry.businessHours || '暫無資訊'}</p>
+                  {selectedEntry.businessHours && (
+                    <div className="flex items-start">
+                      <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-500 flex items-center justify-center shrink-0 mr-3 mt-0.5"><Clock size={14}/></div>
+                      <div>
+                        <p className="text-[10px] font-bold text-gray-400 mb-0.5 tracking-widest">營業時間</p>
+                        <p className="text-sm font-bold text-[#585C64] leading-relaxed">{selectedEntry.businessHours}</p>
+                      </div>
                     </div>
-                  </div>
+                  )}
 
-                  {/* 地址與搜尋 */}
                   <div className="flex items-start">
                     <div className="w-8 h-8 rounded-full bg-pink-100 text-pink-500 flex items-center justify-center shrink-0 mr-3 mt-0.5"><MapPin size={14}/></div>
                     <div>
@@ -331,17 +356,8 @@ export default function Home() {
                   </div>
                 </div>
 
-                {/* 3. 內嵌地圖 */}
                 <div className="mb-6 rounded-2xl overflow-hidden border border-gray-100 h-40 bg-gray-50 relative shadow-inner">
-                  <iframe
-                    width="100%"
-                    height="100%"
-                    style={{ border: 0 }}
-                    loading="lazy"
-                    allowFullScreen
-                    referrerPolicy="no-referrer-when-downgrade"
-                    src={`https://maps.google.com/maps?q=${encodeURIComponent(selectedEntry.address || (selectedEntry.title + ' ' + (selectedEntry.tags?.region || '')))}&t=&z=15&ie=UTF8&iwloc=&output=embed`}
-                  ></iframe>
+                  <iframe width="100%" height="100%" style={{ border: 0 }} loading="lazy" allowFullScreen referrerPolicy="no-referrer-when-downgrade" src={`https://maps.google.com/maps?q=${encodeURIComponent(selectedEntry.address || (selectedEntry.title + ' ' + (selectedEntry.tags?.region || '')))}&t=&z=15&ie=UTF8&iwloc=&output=embed`}></iframe>
                   {selectedEntry.tags?.country === '韓國' && (
                     <a href={`https://map.naver.com/v5/search/${encodeURIComponent(selectedEntry.address || selectedEntry.title)}`} target="_blank" rel="noreferrer" className="absolute bottom-2 right-2 bg-white/90 backdrop-blur px-3 py-1.5 rounded-full text-xs font-bold text-blue-500 shadow-sm flex items-center hover:bg-blue-50 transition">
                       <Navigation size={12} className="mr-1"/> 開啟 Naver Map
@@ -349,7 +365,6 @@ export default function Home() {
                   )}
                 </div>
 
-                {/* 4. 原文連結 */}
                 {selectedEntry.links && selectedEntry.links.length > 0 && (
                   <div className="space-y-2">
                     {selectedEntry.links.map((linkText: string, idx: number) => {

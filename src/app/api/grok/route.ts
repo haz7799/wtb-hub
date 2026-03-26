@@ -2,15 +2,24 @@ import { NextResponse } from 'next/server';
 
 export async function POST(req: Request) {
   try {
-    // 改為接收 generic 的 query_text (可以是店名，也可以是文案)
-    const { query_text } = await req.json();
+    const { query_text, urls } = await req.json();
+
+    // 組合所有的參考網址
+    const urlString = urls && urls.length > 0 ? urls.join('\n') : '無提供網址';
 
     const systemPrompt = `
-    你是一個極度精準的餐廳資訊搜尋與數據提取助理。
-    使用者會輸入「店鋪名稱」或「一段貼文文案」。
-    請你運用你的即時聯網搜尋能力，找出這家店的詳細真實資訊。
+    你是一個擁有強大多模態（視覺、影片解析、聯網）能力的超級助理。
+    使用者會提供「一段文字或店名」以及「一個或多個網址（可能是 IG Reels、YouTube 影片、小紅書圖文或貼文）」。
     
-    必須嚴格以 JSON 格式回傳，絕對不能包含任何額外的文字解釋。
+    【你的任務】：
+    請務必「深入讀取並解析」這些網址中的內容，包含：
+    1. 影片畫面中的招牌或字幕
+    2. 圖片中的文字與菜單
+    3. 貼文正文
+    4. 網友的留言與評價
+    
+    請綜合這些資訊，提取出這家店/景點/品牌的詳細真實資訊。必須嚴格以 JSON 格式回傳，絕對不能包含任何額外的文字解釋。
+    
     回傳格式範例：
     {
       "country": "韓國", 
@@ -23,7 +32,7 @@ export async function POST(req: Request) {
     
     推論規則：
     1. 國家與地區：請盡量細分到商圈（例如：東京-新宿、首爾-弘大/延南洞、台北-信義區）。
-    2. 如果根據輸入的店名真的在網路上找不到某個欄位，請填入空字串 ""。
+    2. 如果根據輸入的店名與網址內容，真的完全找不到某個欄位，請填入空字串 ""。
     `;
     
     const response = await fetch('https://api.x.ai/v1/chat/completions', {
@@ -33,10 +42,10 @@ export async function POST(req: Request) {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: "grok-4-1-fast-reasoning", // 使用 Grok 的快速推理與搜尋模型
+        model: "grok-4-1-fast-reasoning", // 使用 Grok 的最新推理模型
         messages: [
           { role: "system", content: systemPrompt }, 
-          { role: "user", content: `請搜尋並分析此店鋪資訊: ${query_text}` }
+          { role: "user", content: `【使用者輸入的關鍵字/店名】：${query_text}\n\n【請解析以下網址內容 (影片/圖片/圖文)】：\n${urlString}` }
         ],
         temperature: 0.1
       })
