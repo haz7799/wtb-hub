@@ -21,7 +21,6 @@ const SUB_TABS = {
   '設定': [{ label: '個人資訊', value: 'profile' }, { label: '系統設定', value: 'system' }]
 };
 
-// 🌟 第三層過濾器 (針對特定版塊)
 const THIRD_TIER_FILTERS: Record<string, any[]> = {
   '拔草': [
     { label: '全部', value: 'all' }, 
@@ -35,15 +34,10 @@ const THIRD_TIER_FILTERS: Record<string, any[]> = {
   ]
 };
 
-const extractUrl = (text: string) => {
-  const match = text.match(/https?:\/\/[^\s]+/);
-  return match ? match[0] : null;
-};
-
 export default function Home() {
   const [activeMainTab, setActiveMainTab] = useState(MAIN_TABS[0]);
   const [activeSubTab, setActiveSubTab] = useState(SUB_TABS['種草'][0]);
-  const [activeFilter, setActiveFilter] = useState('all'); // 👈 新增：第三層過濾狀態
+  const [activeFilter, setActiveFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [entries, setEntries] = useState<any[]>([]);
@@ -62,7 +56,6 @@ export default function Home() {
     return () => unsubscribe();
   }, []);
 
-  // 切換主版塊時，重置子版塊與過濾器
   const handleMainTabChange = (tab: any) => {
     setActiveMainTab(tab);
     setActiveSubTab(SUB_TABS[tab.id as keyof typeof SUB_TABS][0]);
@@ -70,21 +63,14 @@ export default function Home() {
     setSearchQuery('');
   };
 
-  // 🔍 終極多重篩選邏輯
   const filteredEntries = entries.filter(entry => {
-    if (activeMainTab.id === '設定') return false; // 設定頁不顯示卡片
-
-    // 1. 判斷大版塊與小版塊
+    if (activeMainTab.id === '設定') return false;
     const isTabMatch = entry.type === activeMainTab.type && entry.category === activeSubTab.value;
     if (!isTabMatch) return false;
-
-    // 2. 判斷第三層過濾器 (推薦/不推薦, 個人/公司)
     if (activeFilter !== 'all') {
       if (activeMainTab.id === '拔草' && entry.tags?.recommendation !== activeFilter) return false;
       if (activeMainTab.id === '行事曆' && entry.tags?.eventType !== activeFilter) return false;
     }
-
-    // 3. 判斷搜尋框
     if (searchQuery.trim()) {
       const lowerQuery = searchQuery.toLowerCase();
       return (
@@ -95,7 +81,6 @@ export default function Home() {
         entry.tags?.dishType?.toLowerCase().includes(lowerQuery)
       );
     }
-
     return true;
   });
 
@@ -110,13 +95,11 @@ export default function Home() {
 
   const handleToggleStatus = async (e: React.MouseEvent, item: any) => {
     e.stopPropagation(); 
-    // 行事曆的切換 (未做 <-> 已做)
     if (activeMainTab.id === '行事曆') {
       const newCategory = item.category === 'todo' ? 'done' : 'todo';
       await updateDoc(doc(db, 'entries', item.id), { category: newCategory });
       return;
     }
-    // 種草/拔草的切換
     const isCurrentlyWant = item.type === 'want';
     const newType = isCurrentlyWant ? 'done' : 'want';
     const actionName = isCurrentlyWant ? '拔草成功' : '重新種草';
@@ -133,7 +116,6 @@ export default function Home() {
         </h1>
       </header>
 
-      {/* 搜尋列 (設定頁不顯示) */}
       {activeMainTab.id !== '設定' && (
         <div className="px-6 mb-4">
           <div className="relative">
@@ -144,7 +126,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* 小版塊 Slide Bar */}
       <div className="px-6 mb-3 overflow-x-auto scrollbar-hide whitespace-nowrap">
         <div className="flex space-x-3">
           {SUB_TABS[activeMainTab.id as keyof typeof SUB_TABS].map((sub) => (
@@ -155,7 +136,6 @@ export default function Home() {
         </div>
       </div>
 
-      {/* 🌟 第三層過濾器 (只有拔草和行事曆有) */}
       {THIRD_TIER_FILTERS[activeMainTab.id] && (
         <div className="px-6 mb-4 flex space-x-2">
           {THIRD_TIER_FILTERS[activeMainTab.id].map((filter) => {
@@ -169,7 +149,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* 內容區域：設定頁 vs 卡片列表 */}
       {activeMainTab.id === '設定' ? (
         <div className="px-6 space-y-6 mt-6 animate-fade-in">
           <div className="bg-white rounded-[2rem] p-6 flex items-center shadow-sm border border-gray-50">
@@ -211,7 +190,6 @@ export default function Home() {
                       <img src={item.images[0]} alt="縮圖" className="w-full h-full object-cover" onError={(e) => { e.currentTarget.src = 'https://placehold.co/100x100/F9F7F7/D1D9E6?text=No+Img'; }} />
                     ) : <div className="w-full h-full flex items-center justify-center text-gray-300 text-2xl">{activeMainTab.id === '行事曆' ? '📝' : '🩰'}</div>}
                     
-                    {/* 標記推薦或屬性 */}
                     {item.tags?.recommendation === 'recommend' && <div className="absolute top-1 left-1 bg-pink-500 text-white p-1 rounded-full"><ThumbsUp size={10}/></div>}
                     {item.tags?.recommendation === 'not_recommend' && <div className="absolute top-1 left-1 bg-gray-500 text-white p-1 rounded-full"><ThumbsDown size={10}/></div>}
                   </div>
@@ -220,6 +198,9 @@ export default function Home() {
                     <h3 className="font-bold text-[#585C64] truncate mb-1">{item.title}</h3>
                     <div className="flex flex-wrap gap-1 mb-2">
                       {item.tags?.country && <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-pink-50 text-pink-400"><MapPin size={10} className="mr-0.5" /> {item.tags.country}</span>}
+                      {item.tags?.closedDays && item.tags.closedDays.length > 0 && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-red-50 text-red-500">休週{item.tags.closedDays.join('、')}</span>
+                      )}
                       {item.tags?.eventType === 'personal' && <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-500"><User size={10} className="mr-1"/> 個人</span>}
                       {item.tags?.eventType === 'company' && <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-orange-50 text-orange-500"><Briefcase size={10} className="mr-1"/> 公司</span>}
                     </div>
@@ -235,7 +216,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* 懸浮新增 (設定頁隱藏) */}
       {activeMainTab.id !== '設定' && (
         <button onClick={() => { setEditEntry(null); setIsModalOpen(true); }} className="fixed bottom-28 right-6 w-14 h-14 bg-[#F3E0E2] rounded-full shadow-lg flex items-center justify-center text-white text-3xl hover:bg-pink-300 transition-colors z-40">
           <Plus size={28} />
@@ -257,47 +237,128 @@ export default function Home() {
         </div>
       </nav>
 
-      {/* 🔮 Modal 區域 */}
       <EntryModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} editData={editEntry} />
 
-      {/* 詳細資訊視窗 */}
+      {/* 🔮 終極版詳細資訊視窗 (所有資訊全部回歸！) */}
       <AnimatePresence>
         {selectedEntry && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
             <motion.div initial={{ opacity: 0, scale: 0.9, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.9, y: 20 }} className="bg-white w-full max-w-sm rounded-[2rem] overflow-hidden shadow-2xl relative flex flex-col max-h-[85vh]">
+              
               <div className="absolute top-4 right-4 z-10 flex space-x-2">
                 <button onClick={() => handleEdit(selectedEntry)} className="w-9 h-9 bg-white/80 backdrop-blur-md rounded-full text-blue-500 flex items-center justify-center shadow-sm"><Edit3 size={16} /></button>
                 <button onClick={() => handleDelete(selectedEntry.id)} className="w-9 h-9 bg-white/80 backdrop-blur-md rounded-full text-red-500 flex items-center justify-center shadow-sm"><Trash2 size={16} /></button>
                 <button onClick={() => setSelectedEntry(null)} className="w-9 h-9 bg-black/50 backdrop-blur-md rounded-full text-white flex items-center justify-center shadow-sm"><X size={18} /></button>
               </div>
+
               <div className="w-full h-56 bg-gray-100 relative shrink-0">
                 {selectedEntry.images && selectedEntry.images.length > 0 ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={selectedEntry.images[0]} alt="圖片" className="w-full h-full object-cover" />
+                  <img src={selectedEntry.images[0]} alt="圖片" className="w-full h-full object-cover" onError={(e) => { e.currentTarget.src = 'https://placehold.co/400x300/F9F7F7/D1D9E6?text=No+Img'; }} />
                 ) : <div className="w-full h-full flex items-center justify-center text-4xl text-gray-300">🩰</div>}
               </div>
+
               <div className="p-6 overflow-y-auto bg-white">
-                <h2 className="text-2xl font-black text-[#585C64] mb-4 leading-snug">{selectedEntry.title}</h2>
-                <div className="bg-[#F9F7F7] rounded-2xl p-5 space-y-4 border border-gray-100">
+                {/* 1. 標題與標籤區塊 */}
+                <div className="mb-6">
+                  <h2 className="text-2xl font-black text-[#585C64] mb-3 leading-snug tracking-wide">{selectedEntry.title}</h2>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedEntry.tags?.country && <span className="px-3 py-1 rounded-full text-[11px] font-bold bg-pink-50 text-pink-500 tracking-wider">{selectedEntry.tags.country}</span>}
+                    {selectedEntry.tags?.region && <span className="px-3 py-1 rounded-full text-[11px] font-bold bg-blue-50 text-blue-500 tracking-wider">{selectedEntry.tags.region}</span>}
+                    {selectedEntry.tags?.dishType && <span className="px-3 py-1 rounded-full text-[11px] font-bold bg-gray-100 text-gray-500 tracking-wider">{selectedEntry.tags.dishType}</span>}
+                    {selectedEntry.tags?.eventType === 'personal' && <span className="px-3 py-1 rounded-full text-[11px] font-bold bg-indigo-50 text-indigo-500 tracking-wider">🙋 個人</span>}
+                    {selectedEntry.tags?.eventType === 'company' && <span className="px-3 py-1 rounded-full text-[11px] font-bold bg-orange-50 text-orange-500 tracking-wider">🏢 公司</span>}
+                  </div>
+                </div>
+
+                {/* 2. 結構化資訊卡片 */}
+                <div className="bg-[#F9F7F7] rounded-2xl p-5 space-y-5 mb-6 border border-gray-100">
+                  
+                  {/* 評價 */}
                   {selectedEntry.tags?.recommendation && (
                     <div className="flex items-start">
                       <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 mr-3 mt-0.5 ${selectedEntry.tags.recommendation === 'recommend' ? 'bg-pink-100 text-pink-500' : 'bg-gray-200 text-gray-500'}`}>
                         {selectedEntry.tags.recommendation === 'recommend' ? <ThumbsUp size={14}/> : <ThumbsDown size={14}/>}
                       </div>
                       <div>
-                        <p className="text-[10px] font-bold text-gray-400 mb-0.5">評價</p>
+                        <p className="text-[10px] font-bold text-gray-400 mb-0.5 tracking-widest">評價</p>
                         <p className="text-sm font-bold text-[#585C64]">{selectedEntry.tags.recommendation === 'recommend' ? '超級推薦 👍' : '不推薦 🙅'}</p>
                       </div>
                     </div>
                   )}
+
+                  {/* 推薦菜式 */}
+                  <div className="flex items-start">
+                    <div className="w-8 h-8 rounded-full bg-orange-100 text-orange-500 flex items-center justify-center shrink-0 mr-3 mt-0.5"><Utensils size={14}/></div>
+                    <div>
+                      <p className="text-[10px] font-bold text-gray-400 mb-0.5 tracking-widest">推薦菜式 / 類別</p>
+                      <p className="text-sm font-bold text-[#585C64]">{selectedEntry.tags?.dishType || '未指定'}</p>
+                    </div>
+                  </div>
+
+                  {/* 固定公休日 */}
+                  {selectedEntry.tags?.closedDays && selectedEntry.tags.closedDays.length > 0 && (
+                    <div className="flex items-start">
+                      <div className="w-8 h-8 rounded-full bg-red-100 text-red-500 flex items-center justify-center shrink-0 mr-3 mt-0.5"><Calendar size={14}/></div>
+                      <div>
+                        <p className="text-[10px] font-bold text-gray-400 mb-0.5 tracking-widest">固定公休日</p>
+                        <p className="text-sm font-bold text-red-500 leading-relaxed">逢每週{selectedEntry.tags.closedDays.join('、')}休息</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 營業時間 */}
+                  <div className="flex items-start">
+                    <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-500 flex items-center justify-center shrink-0 mr-3 mt-0.5"><Clock size={14}/></div>
+                    <div>
+                      <p className="text-[10px] font-bold text-gray-400 mb-0.5 tracking-widest">營業時間</p>
+                      <p className="text-sm font-bold text-[#585C64] leading-relaxed">{selectedEntry.businessHours || '暫無資訊'}</p>
+                    </div>
+                  </div>
+
+                  {/* 地址與搜尋 */}
                   <div className="flex items-start">
                     <div className="w-8 h-8 rounded-full bg-pink-100 text-pink-500 flex items-center justify-center shrink-0 mr-3 mt-0.5"><MapPin size={14}/></div>
                     <div>
-                      <p className="text-[10px] font-bold text-gray-400 mb-0.5 tracking-widest">地址或搜尋</p>
-                      <p className="text-sm font-bold text-[#585C64] leading-relaxed">{selectedEntry.address || `搜尋: ${selectedEntry.title}`}</p>
+                      <p className="text-[10px] font-bold text-gray-400 mb-0.5 tracking-widest">{selectedEntry.address ? '地址資訊' : '自動搜尋分店'}</p>
+                      <p className="text-sm font-bold text-[#585C64] leading-relaxed">{selectedEntry.address || `搜尋: ${selectedEntry.title} ${selectedEntry.tags?.region || ''}`}</p>
                     </div>
                   </div>
                 </div>
+
+                {/* 3. 內嵌地圖 */}
+                <div className="mb-6 rounded-2xl overflow-hidden border border-gray-100 h-40 bg-gray-50 relative shadow-inner">
+                  <iframe
+                    width="100%"
+                    height="100%"
+                    style={{ border: 0 }}
+                    loading="lazy"
+                    allowFullScreen
+                    referrerPolicy="no-referrer-when-downgrade"
+                    src={`https://maps.google.com/maps?q=${encodeURIComponent(selectedEntry.address || (selectedEntry.title + ' ' + (selectedEntry.tags?.region || '')))}&t=&z=15&ie=UTF8&iwloc=&output=embed`}
+                  ></iframe>
+                  {selectedEntry.tags?.country === '韓國' && (
+                    <a href={`https://map.naver.com/v5/search/${encodeURIComponent(selectedEntry.address || selectedEntry.title)}`} target="_blank" rel="noreferrer" className="absolute bottom-2 right-2 bg-white/90 backdrop-blur px-3 py-1.5 rounded-full text-xs font-bold text-blue-500 shadow-sm flex items-center hover:bg-blue-50 transition">
+                      <Navigation size={12} className="mr-1"/> 開啟 Naver Map
+                    </a>
+                  )}
+                </div>
+
+                {/* 4. 原文連結 */}
+                {selectedEntry.links && selectedEntry.links.length > 0 && (
+                  <div className="space-y-2">
+                    {selectedEntry.links.map((linkText: string, idx: number) => {
+                      const urlMatch = linkText.match(/https?:\/\/[^\s]+/);
+                      const url = urlMatch ? urlMatch[0] : null;
+                      if (!url) return null; 
+                      return (
+                        <a key={idx} href={url} target="_blank" rel="noreferrer" className="flex items-center justify-center w-full px-4 py-3.5 bg-pink-50 rounded-xl text-sm font-bold text-pink-500 hover:bg-pink-100 transition-all shadow-sm">
+                          <ExternalLink size={16} className="mr-2"/> 前往原貼文看詳細介紹
+                        </a>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </motion.div>
           </div>
