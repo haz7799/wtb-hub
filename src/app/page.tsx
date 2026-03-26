@@ -196,14 +196,19 @@ export default function Home() {
 
                   <div className="flex-1 min-w-0">
                     <h3 className="font-bold text-[#585C64] truncate mb-1">{item.title}</h3>
-                    <div className="flex flex-wrap gap-1 mb-2">
-                      {item.tags?.country && <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-pink-50 text-pink-400"><MapPin size={10} className="mr-0.5" /> {item.tags.country}</span>}
-                      {item.tags?.closedDays && item.tags.closedDays.length > 0 && (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-red-50 text-red-500">休週{item.tags.closedDays.join('、')}</span>
-                      )}
-                      {item.tags?.eventType === 'personal' && <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-500"><User size={10} className="mr-1"/> 個人</span>}
-                      {item.tags?.eventType === 'company' && <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-orange-50 text-orange-500"><Briefcase size={10} className="mr-1"/> 公司</span>}
-                    </div>
+                    <div className="flex flex-wrap gap-1.5 mb-2 mt-1">
+                    {item.tags?.country && <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-pink-50 text-pink-500 shadow-sm"><MapPin size={10} className="mr-0.5" /> {item.tags.country}</span>}
+                    {/* 👇 新增顯示詳細地區 */}
+                    {item.tags?.region && <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-500 shadow-sm">{item.tags.region}</span>}
+                    {/* 👇 新增顯示菜式分類 */}
+                    {item.tags?.dishType && <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-gray-100 text-gray-600 shadow-sm">{item.tags.dishType}</span>}
+                    
+                    {item.tags?.closedDays && item.tags.closedDays.length > 0 && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-red-50 text-red-500 shadow-sm">休週{item.tags.closedDays.join('、')}</span>
+                    )}
+                    {item.tags?.eventType === 'personal' && <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-500 shadow-sm"><User size={10} className="mr-1"/> 個人</span>}
+                    {item.tags?.eventType === 'company' && <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-orange-50 text-orange-500 shadow-sm"><Briefcase size={10} className="mr-1"/> 公司</span>}
+                  </div>
                   </div>
 
                   <button onClick={(e) => handleToggleStatus(e, item)} className={`w-9 h-9 rounded-full border-2 flex items-center justify-center transition-all shadow-sm z-10 shrink-0 ${item.type === 'done' || item.category === 'done' ? 'bg-pink-400 border-pink-400 text-white hover:bg-pink-500' : 'border-[#F3E0E2] text-gray-300 hover:text-pink-400 hover:bg-pink-50'}`}>
