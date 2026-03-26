@@ -2,14 +2,16 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Heart, CheckSquare, Calendar, Settings, Plus, MapPin, X, ExternalLink, Map, Trash2, Edit3, Navigation, Clock, Utensils } from 'lucide-react';
-import { collection, onSnapshot, query, doc, deleteDoc } from 'firebase/firestore';
+import { Heart, CheckSquare, Calendar, Settings, Plus, MapPin, X, ExternalLink, Map, Trash2, Edit3, Navigation, Clock, Utensils, Search } from 'lucide-react';
+import { collection, onSnapshot, query, doc, deleteDoc, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import EntryModal from '@/components/EntryModal';
 
 const MAIN_TABS = [
-  { id: '種草', icon: Heart, type: 'want' }, { id: '拔草', icon: CheckSquare, type: 'done' },
-  { id: '行事曆', icon: Calendar, type: 'calendar' }, { id: '設定', icon: Settings, type: 'settings' }
+  { id: '種草', icon: Heart, type: 'want' }, 
+  { id: '拔草', icon: CheckSquare, type: 'done' },
+  { id: '行事曆', icon: Calendar, type: 'calendar' }, 
+  { id: '設定', icon: Settings, type: 'settings' }
 ];
 
 const SUB_TABS = {
@@ -26,9 +28,13 @@ export default function Home() {
   const [entries, setEntries] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   
+  // 🔍 搜尋框的 State
+  const [searchQuery, setSearchQuery] = useState('');
+  
   const [selectedEntry, setSelectedEntry] = useState<any | null>(null);
   const [editEntry, setEditEntry] = useState<any | null>(null);
 
+  // 📡 監聽 Firebase 資料
   useEffect(() => {
     const q = query(collection(db, 'entries'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -40,8 +46,26 @@ export default function Home() {
     return () => unsubscribe();
   }, []);
 
-  const filteredEntries = entries.filter(entry => entry.type === activeMainTab.type && entry.category === activeSubTab.value);
+  // 🔍 雙重篩選：先篩選版塊 (種草/拔草)，再過濾「搜尋關鍵字」
+  const filteredEntries = entries.filter(entry => {
+    const isTabMatch = entry.type === activeMainTab.type && entry.category === activeSubTab.value;
+    
+    // 如果搜尋框沒字，就直接回傳該版塊的資料
+    if (!searchQuery.trim()) return isTabMatch;
 
+    // 將所有文字轉小寫比對 (支援搜店名、地址、國家、地區、菜式)
+    const lowerQuery = searchQuery.toLowerCase();
+    const isSearchMatch = 
+      (entry.title?.toLowerCase().includes(lowerQuery)) ||
+      (entry.address?.toLowerCase().includes(lowerQuery)) ||
+      (entry.tags?.country?.toLowerCase().includes(lowerQuery)) ||
+      (entry.tags?.region?.toLowerCase().includes(lowerQuery)) ||
+      (entry.tags?.dishType?.toLowerCase().includes(lowerQuery));
+
+    return isTabMatch && isSearchMatch;
+  });
+
+  // 🗑️ 刪除
   const handleDelete = async (id: string) => {
     if (confirm("確定要拔除這筆紀錄嗎？🗑️")) {
       await deleteDoc(doc(db, 'entries', id));
@@ -49,16 +73,58 @@ export default function Home() {
     }
   };
 
-  const handleEdit = (entry: any) => { setEditEntry(entry); setSelectedEntry(null); setIsModalOpen(true); };
+  // ✏️ 編輯
+  const handleEdit = (entry: any) => { 
+    setEditEntry(entry); 
+    setSelectedEntry(null); 
+    setIsModalOpen(true); 
+  };
+
+  // ✅ 狀態切換
+  const handleToggleStatus = async (e: React.MouseEvent, item: any) => {
+    e.stopPropagation(); 
+    const isCurrentlyWant = item.type === 'want';
+    const newType = isCurrentlyWant ? 'done' : 'want';
+    const actionName = isCurrentlyWant ? '拔草成功' : '重新種草';
+
+    if (confirm(`確定要將這筆紀錄標記為「${actionName}」嗎？✨`)) {
+      try {
+        await updateDoc(doc(db, 'entries', item.id), { type: newType });
+      } catch (error) {
+        alert("狀態更新失敗了。");
+      }
+    }
+  };
 
   return (
     <main className="min-h-screen max-w-md mx-auto bg-[#F9F7F7] relative pb-24">
-      <header className="pt-8 pb-6 px-6 text-center">
+      {/* 標題 */}
+      <header className="pt-8 pb-4 px-6 text-center">
         <h1 className="text-4xl font-black italic tracking-widest text-[#FFB6C1]" style={{ WebkitTextStroke: '1.5px white', textShadow: '0 0 10px rgba(255, 182, 193, 0.8)' }}>
           MY WTB bot
         </h1>
       </header>
 
+      {/* 🔍 搜尋列 */}
+      <div className="px-6 mb-4">
+        <div className="relative">
+          <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="搜尋店名、地區或菜式..."
+            className="w-full bg-white border border-gray-100 rounded-full py-2.5 pl-11 pr-4 text-sm focus:outline-none focus:border-pink-200 focus:ring-1 focus:ring-pink-200 transition-all shadow-sm text-gray-600 placeholder:text-gray-300"
+          />
+          {searchQuery && (
+            <button onClick={() => setSearchQuery('')} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500">
+              <X size={16} />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* 小版塊 Slide Bar */}
       <div className="px-6 mb-4 overflow-x-auto scrollbar-hide whitespace-nowrap pb-2">
         <div className="flex space-x-3">
           {SUB_TABS[activeMainTab.id as keyof typeof SUB_TABS].map((sub) => (
@@ -69,18 +135,23 @@ export default function Home() {
         </div>
       </div>
 
+      {/* 卡片列表 */}
       <div className="px-6 space-y-4">
         {isLoading ? (
           <div className="text-center text-gray-400 py-10 animate-pulse">魔法載入中... 🪄</div>
         ) : filteredEntries.length === 0 ? (
-          <div className="bg-white rounded-3xl p-8 text-center shadow-sm min-h-[300px] flex flex-col items-center justify-center">
-            <div className="text-4xl mb-3">🪹</div>
-            <p className="text-gray-400 text-sm">這裡還空空的唷，快點擊右下角新增吧！</p>
+          <div className="bg-white rounded-3xl p-8 text-center shadow-sm min-h-[250px] flex flex-col items-center justify-center">
+            <div className="text-4xl mb-3">{searchQuery ? '🔍' : '🪹'}</div>
+            <p className="text-gray-400 text-sm">
+              {searchQuery ? '找不到相關的紀錄唷！' : '這裡還空空的唷，快點擊右下角新增吧！'}
+            </p>
           </div>
         ) : (
           <AnimatePresence>
             {filteredEntries.map((item) => (
               <motion.div key={item.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }} onClick={() => setSelectedEntry(item)} className="bg-white rounded-2xl p-4 shadow-sm flex space-x-4 items-center border border-gray-50 cursor-pointer hover:shadow-md transition-shadow">
+                
+                {/* 縮圖 */}
                 <div className="w-20 h-20 rounded-xl bg-gray-100 flex-shrink-0 overflow-hidden">
                   {item.images && item.images.length > 0 ? (
                     // eslint-disable-next-line @next/next/no-img-element
@@ -88,6 +159,7 @@ export default function Home() {
                   ) : <div className="w-full h-full flex items-center justify-center text-gray-300 text-2xl">🩰</div>}
                 </div>
 
+                {/* 資訊 */}
                 <div className="flex-1 min-w-0">
                   <h3 className="font-bold text-[#585C64] truncate mb-1">{item.title}</h3>
                   <div className="flex flex-wrap gap-1 mb-2">
@@ -95,16 +167,24 @@ export default function Home() {
                     {item.tags?.region && <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-400">{item.tags.region}</span>}
                   </div>
                 </div>
+
+                {/* 打勾按鈕 */}
+                <button onClick={(e) => handleToggleStatus(e, item)} className={`w-9 h-9 rounded-full border-2 flex items-center justify-center transition-all shadow-sm z-10 shrink-0 ${item.type === 'done' ? 'bg-pink-400 border-pink-400 text-white hover:bg-pink-500' : 'border-[#F3E0E2] text-gray-300 hover:text-pink-400 hover:bg-pink-50'}`}>
+                  <CheckSquare size={16} strokeWidth={2.5} />
+                </button>
+
               </motion.div>
             ))}
           </AnimatePresence>
         )}
       </div>
 
+      {/* 懸浮新增 */}
       <button onClick={() => { setEditEntry(null); setIsModalOpen(true); }} className="fixed bottom-28 right-6 w-14 h-14 bg-[#F3E0E2] rounded-full shadow-lg flex items-center justify-center text-white text-3xl hover:bg-pink-300 transition-colors z-40">
         <Plus size={28} />
       </button>
 
+      {/* 底部導覽 */}
       <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white/70 backdrop-blur-xl border-t border-white pb-6 pt-3 px-6 z-40 rounded-t-3xl shadow-[0_-10px_40px_rgba(0,0,0,0.03)]">
         <div className="flex justify-between items-center">
           {MAIN_TABS.map((tab) => {
@@ -122,7 +202,7 @@ export default function Home() {
 
       <EntryModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} editData={editEntry} />
 
-      {/* 🔮 終極版詳細資訊視窗 (乾淨排版 + 內嵌地圖) */}
+      {/* 🔮 詳細資訊卡片 */}
       <AnimatePresence>
         {selectedEntry && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
@@ -134,7 +214,6 @@ export default function Home() {
                 <button onClick={() => setSelectedEntry(null)} className="w-9 h-9 bg-black/50 backdrop-blur-md rounded-full text-white flex items-center justify-center hover:bg-black/70 transition shadow-sm"><X size={18} /></button>
               </div>
 
-              {/* 頂部大圖 */}
               <div className="w-full h-56 bg-gray-100 relative shrink-0">
                 {selectedEntry.images && selectedEntry.images.length > 0 ? (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -143,7 +222,6 @@ export default function Home() {
               </div>
 
               <div className="p-6 overflow-y-auto bg-white">
-                {/* 標題與標籤 */}
                 <div className="mb-6">
                   <h2 className="text-2xl font-black text-[#585C64] mb-3 leading-snug tracking-wide">{selectedEntry.title}</h2>
                   <div className="flex flex-wrap gap-2">
@@ -152,9 +230,7 @@ export default function Home() {
                   </div>
                 </div>
 
-                {/* 乾淨的結構化資訊卡片 */}
                 <div className="bg-[#F9F7F7] rounded-2xl p-5 space-y-5 mb-6 border border-gray-100">
-                  {/* 推薦菜式 */}
                   <div className="flex items-start">
                     <div className="w-8 h-8 rounded-full bg-orange-100 text-orange-500 flex items-center justify-center shrink-0 mr-3 mt-0.5"><Utensils size={14}/></div>
                     <div>
@@ -162,17 +238,13 @@ export default function Home() {
                       <p className="text-sm font-bold text-[#585C64]">{selectedEntry.tags?.dishType || '未指定'}</p>
                     </div>
                   </div>
-
-                  {/* 營業時間 */}
                   <div className="flex items-start">
                     <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-500 flex items-center justify-center shrink-0 mr-3 mt-0.5"><Clock size={14}/></div>
                     <div>
                       <p className="text-[10px] font-bold text-gray-400 mb-0.5 tracking-widest">營業時間</p>
-                      <p className="text-sm font-bold text-[#585C64] leading-relaxed">{selectedEntry.businessHours || '暫無營業時間資訊'}</p>
+                      <p className="text-sm font-bold text-[#585C64] leading-relaxed">{selectedEntry.businessHours || '暫無資訊'}</p>
                     </div>
                   </div>
-
-                  {/* 地址與搜尋 */}
                   <div className="flex items-start">
                     <div className="w-8 h-8 rounded-full bg-pink-100 text-pink-500 flex items-center justify-center shrink-0 mr-3 mt-0.5"><MapPin size={14}/></div>
                     <div>
@@ -182,18 +254,8 @@ export default function Home() {
                   </div>
                 </div>
 
-                {/* 內嵌地圖 (Iframe) */}
                 <div className="mb-6 rounded-2xl overflow-hidden border border-gray-100 h-40 bg-gray-50 relative shadow-inner">
-                  <iframe
-                    width="100%"
-                    height="100%"
-                    style={{ border: 0 }}
-                    loading="lazy"
-                    allowFullScreen
-                    referrerPolicy="no-referrer-when-downgrade"
-                    src={`https://maps.google.com/maps?q=${encodeURIComponent(selectedEntry.address || (selectedEntry.title + ' ' + (selectedEntry.tags?.region || '')))}&t=&z=15&ie=UTF8&iwloc=&output=embed`}
-                  ></iframe>
-                  {/* 如果是韓國，多提供一顆前往 Naver Map 的快捷鈕 */}
+                  <iframe width="100%" height="100%" style={{ border: 0 }} loading="lazy" allowFullScreen referrerPolicy="no-referrer-when-downgrade" src={`https://maps.google.com/maps?q=${encodeURIComponent(selectedEntry.address || (selectedEntry.title + ' ' + (selectedEntry.tags?.region || '')))}&t=&z=15&ie=UTF8&iwloc=&output=embed`}></iframe>
                   {selectedEntry.tags?.country === '韓國' && (
                     <a href={`https://map.naver.com/v5/search/${encodeURIComponent(selectedEntry.address || selectedEntry.title)}`} target="_blank" rel="noreferrer" className="absolute bottom-2 right-2 bg-white/90 backdrop-blur px-3 py-1.5 rounded-full text-xs font-bold text-blue-500 shadow-sm flex items-center hover:bg-blue-50 transition">
                       <Navigation size={12} className="mr-1"/> 開啟 Naver Map
@@ -201,14 +263,12 @@ export default function Home() {
                   )}
                 </div>
 
-                {/* 原文連結變成純按鈕 (徹底拋棄冗長文案) */}
                 {selectedEntry.links && selectedEntry.links.length > 0 && (
                   <div className="space-y-2">
                     {selectedEntry.links.map((linkText: string, idx: number) => {
                       const urlMatch = linkText.match(/https?:\/\/[^\s]+/);
                       const url = urlMatch ? urlMatch[0] : null;
-                      if (!url) return null; // 如果找不到網址就不顯示
-                      
+                      if (!url) return null; 
                       return (
                         <a key={idx} href={url} target="_blank" rel="noreferrer" className="flex items-center justify-center w-full px-4 py-3.5 bg-pink-50 rounded-xl text-sm font-bold text-pink-500 hover:bg-pink-100 transition-all shadow-sm">
                           <ExternalLink size={16} className="mr-2"/> 前往原貼文看詳細介紹
