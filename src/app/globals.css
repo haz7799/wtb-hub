@@ -1,0 +1,22 @@
+/* 1. Google 字型必須是全宇宙第一行！(解決報錯的絕對關鍵) */
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;900&family=Noto+Sans+KR:wght@400;500;700;900&family=Noto+Sans+TC:wght@400;500;700;900&display=swap');
+
+/* 2. 然後才是載入 Tailwind v4 核心 */
+@import "tailwindcss";
+
+/* 3. 註冊我們的專屬韓系色票 */
+@theme {
+  --color-ballet-pink: #F3E0E2;
+  --color-serene-blue: #D1D9E6;
+  --color-soft-gray: #585C64;
+  --color-light-bg: #F9F7F7;
+}
+
+/* 4. 全域基礎設定 */
+body {
+  background-color: var(--color-light-bg);
+  color: var(--color-soft-gray);
+  -webkit-font-smoothing: antialiased;
+  /* 強制優先使用高級字體，確保多國語言顯示完美且高度一致 */
+  font-family: 'Noto Sans TC', 'Noto Sans KR', 'Noto Sans JP', system-ui, -apple-system, sans-serif !important;
+}
