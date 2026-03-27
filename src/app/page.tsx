@@ -274,8 +274,15 @@ export default function Home() {
         </div>
       </nav>
 
-      {/* 傳遞 currentMainTab 與 currentSubTab 給 Modal，讓它動態變更標題 */}
-      <EntryModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} editData={editEntry} currentMainTab={activeMainTab.id} currentSubTab={activeSubTab.value} />
+{/* 把所有 entries 傳遞給 Modal 以實現歷史記憶功能 */}
+      <EntryModal 
+        isOpen={isModalOpen} 
+        onClose={() => setIsModalOpen(false)} 
+        editData={editEntry} 
+        currentMainTab={activeMainTab.id} 
+        currentSubTab={activeSubTab.value} 
+        entries={entries} 
+      />
 
       <AnimatePresence>
         {selectedEntry && (
