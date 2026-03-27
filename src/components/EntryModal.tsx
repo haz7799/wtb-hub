@@ -18,7 +18,6 @@ const LOCATION_DATA: Record<string, string[]> = {
 
 const WEEK_DAYS = ['一', '二', '三', '四', '五', '六', '日'];
 
-// 🌟 接收 currentTab 屬性來動態改變表單外觀
 export default function EntryModal({ isOpen, onClose, editData = null, currentMainTab = '種草', currentSubTab = 'eat' }: { isOpen: boolean; onClose: () => void; editData?: any; currentMainTab?: string; currentSubTab?: string }) {
   const [selectedCountry, setSelectedCountry] = useState<any>(null);
   const [selectedRegion, setSelectedRegion] = useState<any>(null);
@@ -39,14 +38,13 @@ export default function EntryModal({ isOpen, onClose, editData = null, currentMa
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 💡 動態決定表單的文字與選項
   let nameLabel = '店名 / 名稱';
   let categoryLabel = '類別 / 標籤';
   let defaultOptions = [{ value: 'cafe', label: '咖啡廳/甜點' }, { value: 'korean_bbq', label: '韓式烤肉/烤腸' }];
   
   if (currentSubTab === 'eat') { nameLabel = '餐廳 / 店名'; categoryLabel = '菜式 / 料理種類'; }
-  else if (currentSubTab === 'go') { nameLabel = '景點 / 地標名稱'; categoryLabel = '景點類型 (如: 博物館, 展覽)'; defaultOptions = [{ value: 'museum', label: '博物館/美術館' }, { value: 'nature', label: '自然風景' }]; }
-  else if (currentSubTab === 'buy') { nameLabel = '品牌 / 商店名稱'; categoryLabel = '商品種類 (如: 服飾, 美妝)'; defaultOptions = [{ value: 'fashion', label: '服飾/穿搭' }, { value: 'beauty', label: '美妝/保養' }]; }
+  else if (currentSubTab === 'go') { nameLabel = '景點 / 地標名稱'; categoryLabel = '景點類型'; defaultOptions = [{ value: 'museum', label: '博物館/美術館' }, { value: 'nature', label: '自然風景' }]; }
+  else if (currentSubTab === 'buy') { nameLabel = '品牌 / 商店名稱'; categoryLabel = '商品種類'; defaultOptions = [{ value: 'fashion', label: '服飾/穿搭' }, { value: 'beauty', label: '美妝/保養' }]; }
   else if (currentMainTab === '行事曆') { nameLabel = '待辦事項 / 行程名稱'; categoryLabel = '事項類別'; defaultOptions = [{ value: 'flight', label: '航班/交通' }, { value: 'hotel', label: '飯店住宿' }]; }
 
   useEffect(() => {
@@ -110,7 +108,7 @@ export default function EntryModal({ isOpen, onClose, editData = null, currentMa
 
   const toggleClosedDay = (day: string) => setClosedDays(prev => prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]);
 
-  // 🌟 強大的全網 AI 讀取 (將網址和店名一起送出)
+  // 🌟 AI 全網精準搜尋 (結合店名 + 國家 + 地區)
   const handleAISearch = async () => {
     const validLinks = links.filter(l => l.trim() !== '');
     if (!storeName && validLinks.length === 0) return alert("請輸入「名稱」或在下方「貼上網址」，AI 才能去幫你找資料唷！🩰");
@@ -119,7 +117,12 @@ export default function EntryModal({ isOpen, onClose, editData = null, currentMa
     try {
       const res = await fetch('/api/grok', { 
         method: 'POST', 
-        body: JSON.stringify({ query_text: storeName, urls: validLinks }), 
+        body: JSON.stringify({ 
+          query_text: storeName, 
+          urls: validLinks,
+          country: selectedCountry?.value || '',   // 👈 傳送選擇的國家給 AI
+          region: selectedRegion?.value || ''      // 👈 傳送選擇的地區給 AI
+        }), 
         headers: { 'Content-Type': 'application/json' } 
       });
       const data = await res.json();
@@ -131,7 +134,7 @@ export default function EntryModal({ isOpen, onClose, editData = null, currentMa
       if (data.businessHours) setBusinessHours(data.businessHours);
       if (data.dishType) setDishType({ value: data.dishType, label: data.dishType });
     } catch (error) {
-      alert("哎呀！魔法失靈了，請確認網址是否有效。");
+      alert("哎呀！魔法失靈了，請確認名稱是否正確或網址是否有效。");
     } finally { setIsDetecting(false); }
   };
 
@@ -146,7 +149,6 @@ export default function EntryModal({ isOpen, onClose, editData = null, currentMa
         uploadedImageUrl = await getDownloadURL(snapshot.ref);
       }
 
-      // 取得當前要存入的 type 和 category
       const targetType = currentMainTab === '種草' ? 'want' : (currentMainTab === '拔草' ? 'done' : (currentMainTab === '行事曆' ? 'calendar' : 'want'));
       const targetCategory = currentSubTab;
 
@@ -198,16 +200,6 @@ export default function EntryModal({ isOpen, onClose, editData = null, currentMa
               )}
             </div>
 
-            <div>
-              <div className="flex justify-between items-center mb-1.5">
-                <label className="block text-xs font-medium text-gray-500">{nameLabel}</label>
-                <button type="button" onClick={handleAISearch} disabled={isDetecting} className={`flex items-center text-xs font-bold px-3 py-1.5 rounded-lg transition-all ${isDetecting ? 'bg-gray-100 text-gray-400' : 'bg-pink-100 text-pink-500 hover:bg-pink-200 shadow-sm'}`}>
-                  {isDetecting ? '✨ 解析網址與搜尋中...' : '✨ AI 全網讀取填入'}
-                </button>
-              </div>
-              <input type="text" value={storeName} onChange={(e) => setStoreName(e.target.value)} className="w-full border border-gray-200 rounded-xl p-3 text-sm focus:outline-none focus:border-[#F3E0E2] focus:ring-1 focus:ring-[#F3E0E2] transition-all" placeholder={`輸入${nameLabel} ...`} />
-            </div>
-
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-medium text-gray-500 mb-1">國家</label>
@@ -217,6 +209,17 @@ export default function EntryModal({ isOpen, onClose, editData = null, currentMa
                 <label className="block text-xs font-medium text-gray-500 mb-1">詳細地區</label>
                 <Select options={selectedCountry ? LOCATION_DATA[selectedCountry.value].map(r => ({ value: r, label: r })) : []} styles={customStyles} value={selectedRegion} onChange={setSelectedRegion} placeholder="選擇" isDisabled={!selectedCountry} />
               </div>
+            </div>
+
+            <div>
+              <div className="flex justify-between items-center mb-1.5">
+                <label className="block text-xs font-medium text-gray-500">{nameLabel}</label>
+                <button type="button" onClick={handleAISearch} disabled={isDetecting} className={`flex items-center text-xs font-bold px-3 py-1.5 rounded-lg transition-all ${isDetecting ? 'bg-gray-100 text-gray-400' : 'bg-pink-100 text-pink-500 hover:bg-pink-200 shadow-sm'}`}>
+                  {isDetecting ? '✨ AI 搜尋網路中...' : '✨ AI 全網讀取填入'}
+                </button>
+              </div>
+              {/* 👇 提示文字變更，引導使用者可以搭配國家地區 */}
+              <input type="text" value={storeName} onChange={(e) => setStoreName(e.target.value)} className="w-full border border-gray-200 rounded-xl p-3 text-sm focus:outline-none focus:border-[#F3E0E2] focus:ring-1 focus:ring-[#F3E0E2] transition-all" placeholder={`輸入${nameLabel}，搭配國家更準確...`} />
             </div>
             
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -236,7 +239,6 @@ export default function EntryModal({ isOpen, onClose, editData = null, currentMa
               </div>
             </div>
 
-            {/* 隱藏不相關的選項 (例如想買衣服時不顯示公休日) */}
             {currentSubTab === 'eat' && (
               <div>
                 <label className="block text-xs font-medium text-gray-500 mb-1.5">公休日 (可多選)</label>
@@ -278,14 +280,15 @@ export default function EntryModal({ isOpen, onClose, editData = null, currentMa
 
             <div>
               <div className="flex justify-between items-center mb-1">
-                <label className="block text-xs font-medium text-gray-500">貼文連結 / 影片網址 (必填以供 AI 解析)</label>
+                {/* 👇 明確標示為 Optional */}
+                <label className="block text-xs font-medium text-gray-500">參考連結 / 文案 <span className="text-pink-400 font-bold">(Optional 選填)</span></label>
                 <button type="button" onClick={handleAddLink} className="text-[#D1D9E6] hover:text-[#F3E0E2] flex items-center text-xs transition-colors"><Plus size={14} className="mr-1" /> 新增</button>
               </div>
               <div className="space-y-2">
                 {links.map((link, index) => (
                   <div key={index} className="flex items-center space-x-2">
                     <LinkIcon size={16} className="text-gray-400 shrink-0" />
-                    <input type="text" value={link} onChange={(e) => handleLinkChange(index, e.target.value)} className="flex-1 border border-gray-200 rounded-xl p-2.5 text-sm focus:outline-none focus:border-[#D1D9E6]" placeholder="貼上 IG / 小紅書 / YouTube 連結" />
+                    <input type="text" value={link} onChange={(e) => handleLinkChange(index, e.target.value)} className="flex-1 border border-gray-200 rounded-xl p-2.5 text-sm focus:outline-none focus:border-[#D1D9E6]" placeholder="貼上 IG / 小紅書 / YouTube 連結 (選填)" />
                   </div>
                 ))}
               </div>
