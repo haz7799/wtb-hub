@@ -39,7 +39,7 @@ export async function POST(req: Request) {
     【參考網址 (選填)】：\n${urlString}
     `;
     
-    const response = await fetch('https://api.x.ai/v1', {
+    const response = await fetch('https://api.x.ai/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${process.env.GROK_API_KEY}`,
