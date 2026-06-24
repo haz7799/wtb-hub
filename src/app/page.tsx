@@ -22,8 +22,9 @@ const SUB_TABS = {
   '設定': [{ label: '個人資訊', value: 'profile' }, { label: '系統設定', value: 'system' }]
 };
 
-// 🌟 預先定義好 Flight 的型別，防止 TS 報錯
+// 🌟 更新型別：加入 flightNo (航班號)
 type FlightData = {
+  flightNo: string;
   depAir: string;
   arrAir: string;
   depTime: string;
@@ -51,7 +52,6 @@ export default function Home() {
   
   const [isEditingTrip, setIsEditingTrip] = useState(false);
   
-  // 🌟 核心修復：使用 string 宣告型別，完美解決 TS2322 錯誤
   const [tripForm, setTripForm] = useState({ 
     name: '', startDate: '', endDate: '', 
     flights: [] as FlightData[], 
@@ -209,12 +209,16 @@ export default function Home() {
     
     if (tripData.settings.flights?.length > 0) {
       text += `\n🛫 航班資訊:\n`;
-      tripData.settings.flights.forEach((f:any, i:number) => text += `[${i+1}] ${f.depAir} (${f.depTime}) ➔ ${f.arrAir} (${f.arrTime})\n`);
+      // 🌟 分享文字加入航班號
+      tripData.settings.flights.forEach((f:any, i:number) => {
+        const fNo = f.flightNo ? `[${f.flightNo}] ` : '';
+        text += `(${i+1}) ${fNo}${f.depAir} (${f.depTime}) ➔ ${f.arrAir} (${f.arrTime})\n`;
+      });
     }
     
     if (tripData.settings.hotels?.length > 0) {
       text += `\n🏨 住宿資訊:\n`;
-      tripData.settings.hotels.forEach((h:string, i:number) => text += `[${i+1}] ${h}\n`);
+      tripData.settings.hotels.forEach((h:string, i:number) => text += `(${i+1}) ${h}\n`);
     }
 
     text += `\n📌 每日精選行程:\n`;
@@ -309,11 +313,17 @@ export default function Home() {
                 <div className="border-t border-gray-100 pt-3">
                   <div className="flex justify-between items-center mb-2">
                     <label className="text-xs font-bold text-blue-400 flex items-center"><Send size={14} className="mr-1"/> 航班資訊</label>
-                    <button onClick={() => setTripForm({...tripForm, flights: [...tripForm.flights, { depAir:'', arrAir:'', depTime:'', arrTime:'' }]})} className="text-[10px] bg-blue-50 text-blue-500 px-2 py-1 rounded-md font-bold hover:bg-blue-100">+ 新增航班</button>
+                    <button onClick={() => setTripForm({...tripForm, flights: [...tripForm.flights, { flightNo:'', depAir:'', arrAir:'', depTime:'', arrTime:'' }]})} className="text-[10px] bg-blue-50 text-blue-500 px-2 py-1 rounded-md font-bold hover:bg-blue-100">+ 新增航班</button>
                   </div>
                   {tripForm.flights.map((flight, idx) => (
                     <div key={idx} className="bg-blue-50/50 p-3 rounded-xl border border-blue-50 mb-2 relative group">
                       <button onClick={() => setTripForm({...tripForm, flights: tripForm.flights.filter((_, i) => i !== idx)})} className="absolute top-2 right-2 text-red-300 hover:text-red-500"><X size={14}/></button>
+                      
+                      {/* 🌟 航班號獨立行 */}
+                      <div className="mb-2 pr-6">
+                        <input type="text" placeholder="航班號 (例: CX410)" value={flight.flightNo || ''} onChange={e=>{const f=[...tripForm.flights]; f[idx].flightNo=e.target.value; setTripForm({...tripForm, flights: f})}} className="w-full bg-white p-2 text-xs font-bold text-blue-600 rounded-lg border border-blue-100 outline-none placeholder:font-normal"/>
+                      </div>
+                      
                       <div className="grid grid-cols-2 gap-2 mb-2">
                         <input type="text" placeholder="出發機場/代碼" value={flight.depAir} onChange={e=>{const f=[...tripForm.flights]; f[idx].depAir=e.target.value; setTripForm({...tripForm, flights: f})}} className="bg-white p-2 text-xs rounded-lg border border-blue-100 outline-none"/>
                         <input type="text" placeholder="到達機場/代碼" value={flight.arrAir} onChange={e=>{const f=[...tripForm.flights]; f[idx].arrAir=e.target.value; setTripForm({...tripForm, flights: f})}} className="bg-white p-2 text-xs rounded-lg border border-blue-100 outline-none"/>
@@ -360,7 +370,10 @@ export default function Home() {
                   <div className="mt-3">
                     <p className="text-xs text-blue-400 font-black mb-1">✈️ 航班資訊</p>
                     {tripData.settings.flights.map((f:any, idx:number) => (
-                      <p key={idx} className="text-[10px] text-gray-500 font-mono bg-blue-50/50 p-1.5 rounded-lg mb-1">{f.depAir} ({f.depTime?.split('T')[1]}) ➔ {f.arrAir} ({f.arrTime?.split('T')[1]})</p>
+                      <p key={idx} className="text-[10px] text-gray-500 font-mono bg-blue-50/50 p-1.5 rounded-lg mb-1 flex items-center flex-wrap gap-1">
+                        {f.flightNo && <span className="font-black text-blue-600 bg-white px-1.5 py-0.5 rounded shadow-sm">{f.flightNo}</span>}
+                        {f.depAir} ({f.depTime?.split('T')[1] || '待定'}) ➔ {f.arrAir} ({f.arrTime?.split('T')[1] || '待定'})
+                      </p>
                     ))}
                   </div>
                 )}
