@@ -22,7 +22,6 @@ const SUB_TABS = {
   '設定': [{ label: '個人資訊', value: 'profile' }, { label: '系統設定', value: 'system' }]
 };
 
-// 🌟 更新型別：加入 flightNo (航班號)
 type FlightData = {
   flightNo: string;
   depAir: string;
@@ -51,6 +50,8 @@ export default function Home() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   
   const [isEditingTrip, setIsEditingTrip] = useState(false);
+  // 🌟 新增狀態：追蹤圖片生成進度
+  const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   
   const [tripForm, setTripForm] = useState({ 
     name: '', startDate: '', endDate: '', 
@@ -203,35 +204,157 @@ export default function Home() {
     if (selectedEntry) setSelectedEntry(null); 
   };
 
-  const shareTrip = () => {
+  // 🌟 核心新功能：透過原生 Canvas 繪製並分享高畫質行程表圖片
+  const shareTripAsImage = async () => {
     if (!tripData?.settings) return;
-    let text = `✈️【${tripData.settings.name}】行程表\n🗓️ ${tripData.settings.startDate} ~ ${tripData.settings.endDate}\n`;
-    
-    if (tripData.settings.flights?.length > 0) {
-      text += `\n🛫 航班資訊:\n`;
-      // 🌟 分享文字加入航班號
-      tripData.settings.flights.forEach((f:any, i:number) => {
-        const fNo = f.flightNo ? `[${f.flightNo}] ` : '';
-        text += `(${i+1}) ${fNo}${f.depAir} (${f.depTime}) ➔ ${f.arrAir} (${f.arrTime})\n`;
+    setIsGeneratingImage(true);
+
+    try {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      canvas.width = 800;
+
+      // 1. 動態計算圖片所需高度
+      let contentHeight = 140; // 頂部標題空間
+      
+      if (tripData.settings.flights?.length) contentHeight += 60 + tripData.settings.flights.length * 40;
+      if (tripData.settings.hotels?.length) contentHeight += 60 + tripData.settings.hotels.length * 40;
+
+      contentHeight += 60; // 每日精選行程大標題
+      const days = getDaysArray();
+      days.forEach(date => {
+        contentHeight += 50; 
+        const tasks = tripData.schedule?.[date] || [];
+        if (tasks.length === 0) contentHeight += 40;
+        else contentHeight += tasks.length * 40;
       });
-    }
-    
-    if (tripData.settings.hotels?.length > 0) {
-      text += `\n🏨 住宿資訊:\n`;
-      tripData.settings.hotels.forEach((h:string, i:number) => text += `(${i+1}) ${h}\n`);
-    }
+      contentHeight += 80; // 底部留白與浮水印空間
 
-    text += `\n📌 每日精選行程:\n`;
-    const days = getDaysArray();
-    days.forEach((date, idx) => {
-      text += `\nDay ${idx+1} (${date}):\n`;
-      const tasks = tripData.schedule?.[date] || [];
-      if (tasks.length === 0) text += `  (自由活動)\n`;
-      else tasks.forEach((t:any) => text += `  ⏰ ${t.time} - ${t.task} [${t.type}]\n`);
-    });
+      canvas.height = contentHeight;
 
-    if (navigator.share) navigator.share({ title: tripData.settings.name, text });
-    else { navigator.clipboard.writeText(text); alert("已複製完整行程表至剪貼簿！"); }
+      // 2. 開始繪製畫布背景
+      ctx.fillStyle = '#F9F7F7';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // 頂部裝飾條
+      ctx.fillStyle = '#FFB6C1';
+      ctx.fillRect(0, 0, canvas.width, 16);
+
+      let y = 80;
+      
+      // 繪製標題與日期
+      ctx.fillStyle = '#585C64';
+      ctx.font = 'bold 36px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(`✈️ ${tripData.settings.name}`, canvas.width / 2, y);
+
+      y += 40;
+      ctx.fillStyle = '#9CA3AF';
+      ctx.font = 'bold 22px sans-serif';
+      ctx.fillText(`🗓️ ${tripData.settings.startDate} ~ ${tripData.settings.endDate}`, canvas.width / 2, y);
+
+      ctx.textAlign = 'left';
+      y += 60;
+
+      // 繪製航班資訊
+      if (tripData.settings.flights?.length > 0) {
+        ctx.fillStyle = '#60A5FA';
+        ctx.font = 'bold 24px sans-serif';
+        ctx.fillText('🛫 航班資訊', 60, y);
+        y += 40;
+        ctx.fillStyle = '#6B7280';
+        ctx.font = '20px monospace';
+        tripData.settings.flights.forEach((f: any, i: number) => {
+          const fNo = f.flightNo ? `[${f.flightNo}] ` : '';
+          const text = `(${i+1}) ${fNo}${f.depAir} (${f.depTime?.split('T')[1] || '待定'}) ➔ ${f.arrAir} (${f.arrTime?.split('T')[1] || '待定'})`;
+          ctx.fillText(text, 80, y);
+          y += 35;
+        });
+        y += 20;
+      }
+
+      // 繪製住宿資訊
+      if (tripData.settings.hotels?.length > 0) {
+        ctx.fillStyle = '#F472B6';
+        ctx.font = 'bold 24px sans-serif';
+        ctx.fillText('🏨 住宿資訊', 60, y);
+        y += 40;
+        ctx.fillStyle = '#6B7280';
+        ctx.font = '20px sans-serif';
+        tripData.settings.hotels.forEach((h: string, i: number) => {
+          const text = `(${i+1}) ${h}`;
+          ctx.fillText(text.length > 50 ? text.substring(0, 48) + '...' : text, 80, y);
+          y += 35;
+        });
+        y += 20;
+      }
+
+      // 繪製每日行程
+      ctx.fillStyle = '#585C64';
+      ctx.font = 'bold 26px sans-serif';
+      ctx.fillText('📌 每日精選行程', 60, y);
+      y += 40;
+
+      days.forEach((date, idx) => {
+        ctx.fillStyle = '#FFB6C1';
+        ctx.font = 'bold 22px sans-serif';
+        ctx.fillText(`Day ${idx+1} (${date})`, 60, y);
+        y += 35;
+
+        const tasks = tripData.schedule?.[date] || [];
+        ctx.fillStyle = '#4B5563';
+        ctx.font = '20px sans-serif';
+        if (tasks.length === 0) {
+          ctx.fillText('  (自由活動)', 80, y);
+          y += 35;
+        } else {
+          tasks.forEach((t: any) => {
+            let taskText = `⏰ ${t.time} - ${t.task} [${t.type}]`;
+            if (taskText.length > 45) taskText = taskText.substring(0, 43) + '...';
+            ctx.fillText(taskText, 80, y);
+            y += 35;
+          });
+        }
+        y += 15;
+      });
+
+      // 底部浮水印
+      ctx.fillStyle = '#D1D5DB';
+      ctx.font = 'italic 16px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('Generated by MY WTB bot 🎀', canvas.width / 2, canvas.height - 30);
+
+      // 3. 匯出為圖片並分享
+      canvas.toBlob(async (blob) => {
+        if (!blob) throw new Error('Canvas error');
+        const file = new File([blob], 'itinerary.png', { type: 'image/png' });
+        
+        // 判斷設備是否支援檔案分享 (例如 iOS/Android 原生選單)
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({
+            files: [file],
+            title: `${tripData.settings.name} 行程表`,
+            text: '快來看看我們的行程表！'
+          });
+        } else {
+          // 若不支援（如桌機版），則自動為使用者下載圖片
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `${tripData.settings.name}_行程表.png`;
+          a.click();
+          URL.revokeObjectURL(url);
+          alert("已成功為您匯出並下載行程表圖片！🖼️");
+        }
+        setIsGeneratingImage(false);
+      }, 'image/png');
+
+    } catch (error) {
+      alert("生成圖片失敗，請稍後再試！");
+      setIsGeneratingImage(false);
+    }
   };
 
   const shareReview = (entry: any) => {
@@ -319,7 +442,6 @@ export default function Home() {
                     <div key={idx} className="bg-blue-50/50 p-3 rounded-xl border border-blue-50 mb-2 relative group">
                       <button onClick={() => setTripForm({...tripForm, flights: tripForm.flights.filter((_, i) => i !== idx)})} className="absolute top-2 right-2 text-red-300 hover:text-red-500"><X size={14}/></button>
                       
-                      {/* 🌟 航班號獨立行 */}
                       <div className="mb-2 pr-6">
                         <input type="text" placeholder="航班號 (例: CX410)" value={flight.flightNo || ''} onChange={e=>{const f=[...tripForm.flights]; f[idx].flightNo=e.target.value; setTripForm({...tripForm, flights: f})}} className="w-full bg-white p-2 text-xs font-bold text-blue-600 rounded-lg border border-blue-100 outline-none placeholder:font-normal"/>
                       </div>
@@ -357,7 +479,10 @@ export default function Home() {
           ) : !selectedDate ? (
             <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 animate-fade-in relative">
               <div className="absolute top-4 right-4 flex gap-2">
-                <button onClick={shareTrip} className="p-2 bg-blue-50 text-blue-500 hover:bg-blue-100 rounded-full shadow-sm" title="分享行程"><Share2 size={16}/></button>
+                {/* 🌟 核心：分享按鈕套用 Canvas 生成圖片的邏輯 */}
+                <button onClick={shareTripAsImage} disabled={isGeneratingImage} className="p-2 bg-blue-50 text-blue-500 hover:bg-blue-100 rounded-full shadow-sm" title="分享行程為圖片">
+                  {isGeneratingImage ? <Clock size={16} className="animate-spin" /> : <Share2 size={16}/>}
+                </button>
                 <button onClick={openEditTrip} className="p-2 bg-gray-50 text-gray-500 hover:bg-gray-100 rounded-full shadow-sm" title="編輯設定"><Edit3 size={16}/></button>
                 <button onClick={() => { if(confirm("確定徹底刪除此行程表？")) setDoc(doc(db, 'appData', 'currentTrip'), { settings: null, schedule: {} }) }} className="p-2 bg-red-50 text-red-500 hover:bg-red-100 rounded-full shadow-sm"><Trash2 size={16}/></button>
               </div>
