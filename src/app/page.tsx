@@ -367,7 +367,7 @@ export default function Home() {
     <main className="min-h-screen max-w-md mx-auto bg-[#F9F7F7] relative pb-28">
       <header className="pt-8 pb-4 px-6 text-center">
         <h1 className="text-4xl font-black italic tracking-widest text-[#FFB6C1]" style={{ WebkitTextStroke: '1.5px white', textShadow: '0 0 10px rgba(255, 182, 193, 0.8)' }}>
-          MY WTB bot
+          Collection
         </h1>
       </header>
 

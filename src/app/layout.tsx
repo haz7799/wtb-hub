@@ -11,12 +11,12 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "MY WTB bot",
-  description: "韓系溫柔種草/拔草工具",
+  title: "Record",
+  description: "Collection-Bot",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "WTB bot",
+    title: "WannaBuy-bot",
   },
 };
 
