@@ -364,7 +364,7 @@ export default function Home() {
     <main className="min-h-screen max-w-md mx-auto bg-[#F9F7F7] relative pb-28">
       <header className="pt-8 pb-4 px-6 text-center">
         <h1 className="text-4xl font-black italic tracking-widest text-[#FFB6C1]" style={{ WebkitTextStroke: '1.5px white', textShadow: '0 0 10px rgba(255, 182, 193, 0.8)' }}>
-          MY WTB bot
+          Collection
         </h1>
       </header>
 
@@ -597,14 +597,26 @@ export default function Home() {
                     ) : <div className="w-full h-full flex items-center justify-center text-gray-300 text-2xl">🩰</div>}
                     {item.images?.length > 1 && <span className="absolute bottom-1 right-1 bg-black/50 text-white text-[10px] px-1.5 rounded-sm">+{item.images.length-1}</span>}
                   </div>
-                  <div className="flex-1 min-w-0 pr-6">
-                    <h3 className="font-bold text-[#585C64] truncate mb-1">{item.title}</h3>
-                    <div className="flex flex-wrap gap-1.5 mb-2 mt-1">
-                      {item.tags?.region && <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-500">{item.tags.region}</span>}
-                      {item.tags?.dishType && <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-gray-100 text-gray-600">{item.tags.dishType}</span>}
-                      {item.rating && <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-yellow-50 text-yellow-600"><Star size={10} className="mr-1" fill="currentColor"/> {item.rating}.0</span>}
-                    </div>
-                  </div>
+                  <div className="flex-1 min-w-0">
+                  <h3 className="font-bold text-[#585C64] truncate mb-1">{item.title}</h3>
+                   <div className="flex flex-wrap gap-1.5 mb-2 mt-1">
+    {/* ✨ 這裡新增了首頁的 推/不推 標籤 ✨ */}
+    {item.type === 'done' && item.tags?.recommendation === 'recommend' && (
+      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-pink-100 text-pink-600">
+        <ThumbsUp size={10} className="mr-1"/> 推薦
+      </span>
+    )}
+    {item.type === 'done' && item.tags?.recommendation === 'not_recommend' && (
+      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-gray-200 text-gray-600">
+        <ThumbsDown size={10} className="mr-1"/> 避雷
+      </span>
+    )}
+
+    {item.tags?.region && <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-500">{item.tags.region}</span>}
+    {item.tags?.dishType && <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-gray-100 text-gray-600">{item.tags.dishType}</span>}
+    {item.rating && <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-yellow-50 text-yellow-600"><Star size={10} className="mr-1" fill="currentColor"/> {item.rating}.0</span>}
+  </div>
+</div>
                   
                   {tripData?.settings && (
                     <button 
