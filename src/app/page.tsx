@@ -1,10 +1,9 @@
-// src/app/page.tsx
 'use client';
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Heart, CheckSquare, Calendar as CalendarIcon, Settings, Plus, MapPin, X, ExternalLink, Trash2, Edit3, Clock, Search, ThumbsUp, ThumbsDown, Bell, ChevronRight, Filter, Star, Share2, ChevronLeft, Send } from 'lucide-react';
-import { collection, onSnapshot, query, doc, deleteDoc, updateDoc, setDoc } from 'firebase/firestore';
+import { Heart, CheckSquare, Calendar as CalendarIcon, Settings, Plus, MapPin, X, ExternalLink, Trash2, Edit3, Clock, Search, ThumbsUp, ThumbsDown, Bell, ChevronRight, Filter, Star, Share2, ChevronLeft, Send, ArrowLeft } from 'lucide-react';
+import { collection, onSnapshot, query, doc, deleteDoc, updateDoc, setDoc, addDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import EntryModal from '@/components/EntryModal';
 
@@ -22,12 +21,18 @@ const SUB_TABS = {
   '設定': [{ label: '個人資訊', value: 'profile' }, { label: '系統設定', value: 'system' }]
 };
 
-type FlightData = {
-  flightNo: string;
-  depAir: string;
-  arrAir: string;
-  depTime: string;
-  arrTime: string;
+type FlightData = { flightNo: string; depAir: string; arrAir: string; depTime: string; arrTime: string; };
+
+// 🌟 取得國旗 Emoji 的輔助函數
+const getFlagEmoji = (country: string) => {
+  if (!country) return '';
+  if (country.includes('日本')) return '🇯🇵';
+  if (country.includes('韓國')) return '🇰🇷';
+  if (country.includes('台灣')) return '🇹🇼';
+  if (country.includes('香港')) return '🇭🇰';
+  if (country.includes('泰國')) return '🇹🇭';
+  if (country.includes('澳門')) return '🇲🇴';
+  return '🌍';
 };
 
 export default function Home() {
@@ -46,42 +51,43 @@ export default function Home() {
   const [selectedEntry, setSelectedEntry] = useState<any | null>(null);
   const [editEntry, setEditEntry] = useState<any | null>(null);
 
-  const [tripData, setTripData] = useState<any | null>(null);
+  // 🌟 行程曆系統 (升級為多行程支援)
+  const [trips, setTrips] = useState<any[]>([]);
+  const [activeTripId, setActiveTripId] = useState<string | null>(null);
+  const activeTrip = trips.find(t => t.id === activeTripId);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   
   const [isEditingTrip, setIsEditingTrip] = useState(false);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   
-  const [tripForm, setTripForm] = useState({ 
-    name: '', startDate: '', endDate: '', 
-    flights: [] as FlightData[], 
-    hotels: [] as string[] 
-  });
-  
+  const [tripForm, setTripForm] = useState({ name: '', startDate: '', endDate: '', flights: [] as FlightData[], hotels: [] as string[] });
   const [newTask, setNewTask] = useState({ time: '10:00', task: '', type: '景點', link: '' });
   
   const [addingToTripEntry, setAddingToTripEntry] = useState<any | null>(null);
+  const [addToTripId, setAddToTripId] = useState('');
   const [addToTripDate, setAddToTripDate] = useState('');
   const [addToTripTime, setAddToTripTime] = useState('12:00');
 
   useEffect(() => {
-    const q = query(collection(db, 'entries'));
-    const unsubscribeEntries = onSnapshot(q, (snapshot) => {
+    // 監聽紀錄
+    const qEntries = query(collection(db, 'entries'));
+    const unsubscribeEntries = onSnapshot(qEntries, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       data.sort((a: any, b: any) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0));
       setEntries(data);
       setIsLoading(false);
     });
 
-    const unsubscribeTrip = onSnapshot(doc(db, 'appData', 'currentTrip'), (docSnap) => {
-      if (docSnap.exists() && docSnap.data().settings) {
-        setTripData(docSnap.data());
-      } else {
-        setTripData(null);
-      }
+    // 監聽所有行程
+    const qTrips = query(collection(db, 'trips'));
+    const unsubscribeTrips = onSnapshot(qTrips, (snapshot) => {
+      const tripsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      // 依開始日期排序
+      tripsData.sort((a: any, b: any) => new Date(a.settings?.startDate).getTime() - new Date(b.settings?.startDate).getTime());
+      setTrips(tripsData);
     });
 
-    return () => { unsubscribeEntries(); unsubscribeTrip(); };
+    return () => { unsubscribeEntries(); unsubscribeTrips(); };
   }, []);
 
   const availableCountries = Array.from(new Set(entries.map(e => e.tags?.country).filter(Boolean)));
@@ -93,8 +99,6 @@ export default function Home() {
     setActiveSubTab(SUB_TABS[tab.id as keyof typeof SUB_TABS][0]);
     setActiveFilter('all');
     setSearchQuery(''); setSelectedFilterCountry(''); setSelectedFilterRegion(''); setSelectedFilterDish('');
-    setSelectedDate(null);
-    setIsEditingTrip(false);
   };
 
   const filteredEntries = entries.filter(entry => {
@@ -139,28 +143,45 @@ export default function Home() {
     }
   };
 
+  // ==========================================
+  // ✈️ 多行程邏輯
+  // ==========================================
+  const openNewTrip = () => {
+    setTripForm({ name: '', startDate: '', endDate: '', flights: [], hotels: [] });
+    setActiveTripId(null);
+    setIsEditingTrip(true);
+  };
+
   const openEditTrip = () => {
-    setTripForm({
-      name: tripData.settings.name,
-      startDate: tripData.settings.startDate,
-      endDate: tripData.settings.endDate,
-      flights: tripData.settings.flights || [],
-      hotels: tripData.settings.hotels || []
-    });
+    if (!activeTrip) return;
+    setTripForm({ ...activeTrip.settings, flights: activeTrip.settings.flights || [], hotels: activeTrip.settings.hotels || [] });
     setIsEditingTrip(true);
   };
 
   const saveTripSettings = async () => {
     if (!tripForm.name || !tripForm.startDate || !tripForm.endDate) return alert("請填寫行程名稱與日期！");
-    await setDoc(doc(db, 'appData', 'currentTrip'), { settings: tripForm, schedule: tripData?.schedule || {} }, { merge: true });
+    if (activeTripId) {
+      await updateDoc(doc(db, 'trips', activeTripId), { settings: tripForm });
+    } else {
+      const docRef = doc(collection(db, 'trips'));
+      await setDoc(docRef, { settings: tripForm, schedule: {} });
+      setActiveTripId(docRef.id);
+    }
     setIsEditingTrip(false);
   };
 
-  const getDaysArray = () => {
-    if (!tripData?.settings?.startDate || !tripData?.settings?.endDate) return [];
+  const deleteTrip = async (id: string) => {
+    if (confirm("確定徹底刪除此行程表嗎？這無法復原喔！")) {
+      await deleteDoc(doc(db, 'trips', id));
+      if (activeTripId === id) setActiveTripId(null);
+    }
+  };
+
+  const getDaysArray = (trip: any) => {
+    if (!trip?.settings?.startDate || !trip?.settings?.endDate) return [];
     let dates = [];
-    let currDate = new Date(tripData.settings.startDate);
-    let endDate = new Date(tripData.settings.endDate);
+    let currDate = new Date(trip.settings.startDate);
+    let endDate = new Date(trip.settings.endDate);
     while (currDate <= endDate) {
       dates.push(currDate.toISOString().split('T')[0]);
       currDate.setDate(currDate.getDate() + 1);
@@ -169,189 +190,127 @@ export default function Home() {
   };
 
   const saveTask = async () => {
-    if (!newTask.task || !selectedDate) return;
-    const dayTasks = tripData?.schedule?.[selectedDate] || [];
+    if (!newTask.task || !selectedDate || !activeTripId) return;
+    const dayTasks = activeTrip?.schedule?.[selectedDate] || [];
     const updatedTasks = [...dayTasks, { id: Date.now(), ...newTask }].sort((a, b) => a.time.localeCompare(b.time));
-    await setDoc(doc(db, 'appData', 'currentTrip'), { schedule: { ...tripData.schedule, [selectedDate]: updatedTasks } }, { merge: true });
+    await setDoc(doc(db, 'trips', activeTripId), { schedule: { ...activeTrip.schedule, [selectedDate]: updatedTasks } }, { merge: true });
     setNewTask({ time: '10:00', task: '', type: '景點', link: '' });
   };
 
   const deleteTask = async (taskId: number) => {
-    const updatedTasks = tripData.schedule[selectedDate!].filter((t: any) => t.id !== taskId);
-    await setDoc(doc(db, 'appData', 'currentTrip'), { schedule: { ...tripData.schedule, [selectedDate!]: updatedTasks } }, { merge: true });
+    if (!activeTripId || !selectedDate) return;
+    const updatedTasks = activeTrip.schedule[selectedDate].filter((t: any) => t.id !== taskId);
+    await setDoc(doc(db, 'trips', activeTripId), { schedule: { ...activeTrip.schedule, [selectedDate]: updatedTasks } }, { merge: true });
   };
 
-  // 🌟 自動辨識國家並決定地圖搜尋引擎
   const confirmAddToTrip = async () => {
-    if (!addToTripDate || !addingToTripEntry) return alert("請選擇日期！");
-    const dayTasks = tripData?.schedule?.[addToTripDate] || [];
-    
+    if (!addToTripId || !addToTripDate || !addingToTripEntry) return alert("請選擇行程與日期！");
+    const targetTrip = trips.find(t => t.id === addToTripId);
+    if (!targetTrip) return;
+
+    const dayTasks = targetTrip.schedule?.[addToTripDate] || [];
     const isKorea = addingToTripEntry.tags?.country === '韓國';
     const mapQuery = encodeURIComponent(addingToTripEntry.address || addingToTripEntry.title || '');
-    
-    // 依據國家分流地圖引擎
-    const fallbackLink = isKorea 
-      ? `https://map.naver.com/v5/search/${mapQuery}` 
-      : `https://www.google.com/maps/search/?api=1&query=${mapQuery}`;
-      
+    const fallbackLink = isKorea ? `https://map.naver.com/v5/search/${mapQuery}` : `https://www.google.com/maps/search/?api=1&query=${mapQuery}`;
     const defaultLink = addingToTripEntry.links?.[0] || fallbackLink;
     const targetType = addingToTripEntry.category === 'eat' ? '餐飲' : (addingToTripEntry.category === 'go' ? '景點' : '購物');
 
-    const newTaskData = {
-      id: Date.now(),
-      time: addToTripTime,
-      task: addingToTripEntry.title,
-      type: targetType,
-      link: defaultLink
-    };
-
+    const newTaskData = { id: Date.now(), time: addToTripTime, task: addingToTripEntry.title, type: targetType, link: defaultLink };
     const updatedTasks = [...dayTasks, newTaskData].sort((a, b) => a.time.localeCompare(b.time));
-    await setDoc(doc(db, 'appData', 'currentTrip'), { schedule: { ...tripData.schedule, [addToTripDate]: updatedTasks } }, { merge: true });
     
-    alert(`✅ 已將「${addingToTripEntry.title}」加入 ${addToTripDate} 的行程！`);
+    await setDoc(doc(db, 'trips', addToTripId), { schedule: { ...targetTrip.schedule, [addToTripDate]: updatedTasks } }, { merge: true });
+    
+    alert(`✅ 已成功加入行程！`);
     setAddingToTripEntry(null);
     if (selectedEntry) setSelectedEntry(null); 
   };
 
   const shareTripAsImage = async () => {
-    if (!tripData?.settings) return;
+    if (!activeTrip?.settings) return;
     setIsGeneratingImage(true);
-
     try {
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
-
       canvas.width = 800;
 
       let contentHeight = 140; 
-      
-      if (tripData.settings.flights?.length) contentHeight += 60 + tripData.settings.flights.length * 40;
-      if (tripData.settings.hotels?.length) contentHeight += 60 + tripData.settings.hotels.length * 40;
-
+      if (activeTrip.settings.flights?.length) contentHeight += 60 + activeTrip.settings.flights.length * 40;
+      if (activeTrip.settings.hotels?.length) contentHeight += 60 + activeTrip.settings.hotels.length * 40;
       contentHeight += 60; 
-      const days = getDaysArray();
+      const days = getDaysArray(activeTrip);
       days.forEach(date => {
         contentHeight += 50; 
-        const tasks = tripData.schedule?.[date] || [];
+        const tasks = activeTrip.schedule?.[date] || [];
         if (tasks.length === 0) contentHeight += 40;
         else contentHeight += tasks.length * 40;
       });
       contentHeight += 80; 
-
       canvas.height = contentHeight;
 
-      ctx.fillStyle = '#F9F7F7';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      ctx.fillStyle = '#FFB6C1';
-      ctx.fillRect(0, 0, canvas.width, 16);
+      ctx.fillStyle = '#F9F7F7'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#FFB6C1'; ctx.fillRect(0, 0, canvas.width, 16);
 
       let y = 80;
-      
-      ctx.fillStyle = '#585C64';
-      ctx.font = 'bold 36px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(`✈️ ${tripData.settings.name}`, canvas.width / 2, y);
+      ctx.fillStyle = '#585C64'; ctx.font = 'bold 36px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText(`✈️ ${activeTrip.settings.name}`, canvas.width / 2, y);
 
-      y += 40;
-      ctx.fillStyle = '#9CA3AF';
-      ctx.font = 'bold 22px sans-serif';
-      ctx.fillText(`🗓️ ${tripData.settings.startDate} ~ ${tripData.settings.endDate}`, canvas.width / 2, y);
+      y += 40; ctx.fillStyle = '#9CA3AF'; ctx.font = 'bold 22px sans-serif';
+      ctx.fillText(`🗓️ ${activeTrip.settings.startDate} ~ ${activeTrip.settings.endDate}`, canvas.width / 2, y);
+      ctx.textAlign = 'left'; y += 60;
 
-      ctx.textAlign = 'left';
-      y += 60;
-
-      if (tripData.settings.flights?.length > 0) {
-        ctx.fillStyle = '#60A5FA';
-        ctx.font = 'bold 24px sans-serif';
-        ctx.fillText('🛫 航班資訊', 60, y);
-        y += 40;
-        ctx.fillStyle = '#6B7280';
-        ctx.font = '20px monospace';
-        tripData.settings.flights.forEach((f: any, i: number) => {
+      if (activeTrip.settings.flights?.length > 0) {
+        ctx.fillStyle = '#60A5FA'; ctx.font = 'bold 24px sans-serif'; ctx.fillText('🛫 航班資訊', 60, y); y += 40;
+        ctx.fillStyle = '#6B7280'; ctx.font = '20px monospace';
+        activeTrip.settings.flights.forEach((f: any, i: number) => {
           const fNo = f.flightNo ? `[${f.flightNo}] ` : '';
-          const text = `(${i+1}) ${fNo}${f.depAir} (${f.depTime?.split('T')[1] || '待定'}) ➔ ${f.arrAir} (${f.arrTime?.split('T')[1] || '待定'})`;
-          ctx.fillText(text, 80, y);
-          y += 35;
-        });
-        y += 20;
+          ctx.fillText(`(${i+1}) ${fNo}${f.depAir} (${f.depTime?.split('T')[1] || '待定'}) ➔ ${f.arrAir} (${f.arrTime?.split('T')[1] || '待定'})`, 80, y); y += 35;
+        }); y += 20;
       }
 
-      if (tripData.settings.hotels?.length > 0) {
-        ctx.fillStyle = '#F472B6';
-        ctx.font = 'bold 24px sans-serif';
-        ctx.fillText('🏨 住宿資訊', 60, y);
-        y += 40;
-        ctx.fillStyle = '#6B7280';
-        ctx.font = '20px sans-serif';
-        tripData.settings.hotels.forEach((h: string, i: number) => {
+      if (activeTrip.settings.hotels?.length > 0) {
+        ctx.fillStyle = '#F472B6'; ctx.font = 'bold 24px sans-serif'; ctx.fillText('🏨 住宿資訊', 60, y); y += 40;
+        ctx.fillStyle = '#6B7280'; ctx.font = '20px sans-serif';
+        activeTrip.settings.hotels.forEach((h: string, i: number) => {
           const text = `(${i+1}) ${h}`;
-          ctx.fillText(text.length > 50 ? text.substring(0, 48) + '...' : text, 80, y);
-          y += 35;
-        });
-        y += 20;
+          ctx.fillText(text.length > 50 ? text.substring(0, 48) + '...' : text, 80, y); y += 35;
+        }); y += 20;
       }
 
-      ctx.fillStyle = '#585C64';
-      ctx.font = 'bold 26px sans-serif';
-      ctx.fillText('📌 每日精選行程', 60, y);
-      y += 40;
+      ctx.fillStyle = '#585C64'; ctx.font = 'bold 26px sans-serif'; ctx.fillText('📌 每日精選行程', 60, y); y += 40;
 
       days.forEach((date, idx) => {
-        ctx.fillStyle = '#FFB6C1';
-        ctx.font = 'bold 22px sans-serif';
-        ctx.fillText(`Day ${idx+1} (${date})`, 60, y);
-        y += 35;
-
-        const tasks = tripData.schedule?.[date] || [];
-        ctx.fillStyle = '#4B5563';
-        ctx.font = '20px sans-serif';
-        if (tasks.length === 0) {
-          ctx.fillText('  (自由活動)', 80, y);
-          y += 35;
-        } else {
+        ctx.fillStyle = '#FFB6C1'; ctx.font = 'bold 22px sans-serif'; ctx.fillText(`Day ${idx+1} (${date})`, 60, y); y += 35;
+        const tasks = activeTrip.schedule?.[date] || [];
+        ctx.fillStyle = '#4B5563'; ctx.font = '20px sans-serif';
+        if (tasks.length === 0) { ctx.fillText('  (自由活動)', 80, y); y += 35; } 
+        else {
           tasks.forEach((t: any) => {
             let taskText = `⏰ ${t.time} - ${t.task} [${t.type}]`;
             if (taskText.length > 45) taskText = taskText.substring(0, 43) + '...';
-            ctx.fillText(taskText, 80, y);
-            y += 35;
+            ctx.fillText(taskText, 80, y); y += 35;
           });
         }
         y += 15;
       });
 
-      ctx.fillStyle = '#D1D5DB';
-      ctx.font = 'italic 16px sans-serif';
-      ctx.textAlign = 'center';
+      ctx.fillStyle = '#D1D5DB'; ctx.font = 'italic 16px sans-serif'; ctx.textAlign = 'center';
       ctx.fillText('Generated by MY WTB bot 🎀', canvas.width / 2, canvas.height - 30);
 
       canvas.toBlob(async (blob) => {
         if (!blob) throw new Error('Canvas error');
         const file = new File([blob], 'itinerary.png', { type: 'image/png' });
-        
         if (navigator.canShare && navigator.canShare({ files: [file] })) {
-          await navigator.share({
-            files: [file],
-            title: `${tripData.settings.name} 行程表`,
-            text: '快來看看我們的行程表！'
-          });
+          await navigator.share({ files: [file], title: `${activeTrip.settings.name} 行程表`, text: '快來看看我們的行程表！' });
         } else {
           const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = `${tripData.settings.name}_行程表.png`;
-          a.click();
-          URL.revokeObjectURL(url);
-          alert("已成功為您匯出並下載行程表圖片！🖼️");
+          const a = document.createElement('a'); a.href = url; a.download = `${activeTrip.settings.name}_行程表.png`; a.click();
+          URL.revokeObjectURL(url); alert("已成功為您匯出並下載行程表圖片！🖼️");
         }
         setIsGeneratingImage(false);
       }, 'image/png');
 
-    } catch (error) {
-      alert("生成圖片失敗，請稍後再試！");
-      setIsGeneratingImage(false);
-    }
+    } catch (error) { alert("生成圖片失敗，請稍後再試！"); setIsGeneratingImage(false); }
   };
 
   const shareReview = (entry: any) => {
@@ -359,6 +318,52 @@ export default function Home() {
     if (navigator.share) navigator.share({ text });
     else { navigator.clipboard.writeText(text); alert("已複製評論！"); }
   };
+
+  // ==========================================
+  // UI 渲染用元件：項目卡片
+  // ==========================================
+  const renderItemCard = (item: any, isMini = false) => (
+    <motion.div key={item.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }} onClick={() => setSelectedEntry(item)} 
+      className={`bg-white rounded-2xl shadow-sm border border-gray-50 cursor-pointer hover:shadow-md transition-shadow relative overflow-hidden group 
+      ${isMini ? 'flex flex-col p-3' : 'flex space-x-4 p-4 items-center'}`}>
+      
+      <div className={`${isMini ? 'w-full h-24 mb-2' : 'w-20 h-20'} rounded-xl bg-gray-100 flex-shrink-0 overflow-hidden relative`}>
+        {item.images && item.images.length > 0 ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={item.images[0]} alt="縮圖" className="w-full h-full object-cover" />
+        ) : <div className="w-full h-full flex items-center justify-center text-gray-300 text-2xl">🩰</div>}
+        {item.images?.length > 1 && <span className="absolute bottom-1 right-1 bg-black/50 text-white text-[10px] px-1.5 rounded-sm">+{item.images.length-1}</span>}
+      </div>
+      
+      <div className="flex-1 min-w-0">
+        <h3 className={`font-bold text-[#585C64] truncate mb-1 ${isMini ? 'text-xs text-center' : ''}`}>{item.title}</h3>
+        
+        <div className={`flex flex-wrap gap-1 ${isMini ? 'justify-center mt-1' : 'mt-1.5 mb-1'}`}>
+          {/* 國家/地區 + 國旗 */}
+          {item.tags?.country && <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-pink-50 text-pink-500 shadow-sm">{getFlagEmoji(item.tags.country)} {item.tags.country}{item.tags.region && ` - ${item.tags.region}`}</span>}
+          
+          {/* 營業時間 / 休息日 (列表模式) */}
+          {!isMini && item.businessHours && <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-green-50 text-green-600 shadow-sm truncate max-w-[100px]"><Clock size={8} className="mr-1"/>{item.businessHours}</span>}
+          {!isMini && item.tags?.closedDays && item.tags.closedDays.length > 0 && <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-50 text-red-500 shadow-sm">休 {item.tags.closedDays.join('、')}</span>}
+          
+          {/* 評分與標籤 */}
+          {item.rating && <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-yellow-50 text-yellow-600 shadow-sm"><Star size={8} className="mr-0.5" fill="currentColor"/> {item.rating}.0</span>}
+        </div>
+      </div>
+
+      {/* 加入行程按鈕 (僅限列表模式) */}
+      {!isMini && trips.length > 0 && (
+        <button onClick={(e) => { e.stopPropagation(); setAddingToTripEntry(item); setAddToTripId(trips[0].id); }} className="absolute top-3 right-12 w-8 h-8 rounded-full bg-indigo-50 text-indigo-500 flex items-center justify-center hover:bg-indigo-100 transition-colors z-10 opacity-100 sm:opacity-0 group-hover:opacity-100 shadow-sm" title="加入行程">
+          <CalendarIcon size={14} />
+        </button>
+      )}
+
+      {/* 狀態切換按鈕 */}
+      <button onClick={(e) => handleToggleStatus(e, item)} className={`absolute top-2 right-2 ${isMini ? 'w-6 h-6' : 'w-8 h-8'} rounded-full border-2 flex items-center justify-center transition-all shadow-sm z-10 shrink-0 ${item.type === 'done' ? 'bg-[#FFB6C1] border-[#FFB6C1] text-white' : 'bg-white border-[#F3E0E2] text-gray-300 hover:text-pink-400'}`}>
+        <CheckSquare size={isMini ? 10 : 14} strokeWidth={2.5} />
+      </button>
+    </motion.div>
+  );
 
   return (
     <main className="min-h-screen max-w-md mx-auto bg-[#F9F7F7] relative pb-28">
@@ -368,6 +373,7 @@ export default function Home() {
         </h1>
       </header>
 
+      {/* === 搜尋與篩選 (種草/拔草顯示) === */}
       {(activeMainTab.id === '種草' || activeMainTab.id === '拔草') && (
         <>
           <div className="px-6 mb-3 space-y-3">
@@ -378,9 +384,7 @@ export default function Home() {
             </div>
 
             <div className="flex space-x-2 overflow-x-auto scrollbar-hide pb-1">
-              <div className="flex items-center shrink-0 text-gray-400 bg-white border border-gray-100 px-3 py-1.5 rounded-full shadow-sm">
-                <Filter size={14} className="mr-1.5" /> <span className="text-xs font-bold">篩選</span>
-              </div>
+              <div className="flex items-center shrink-0 text-gray-400 bg-white border border-gray-100 px-3 py-1.5 rounded-full shadow-sm"><Filter size={14} className="mr-1.5" /> <span className="text-xs font-bold">篩選</span></div>
               <select value={selectedFilterCountry} onChange={(e) => setSelectedFilterCountry(e.target.value)} className="shrink-0 bg-white border border-gray-100 text-gray-500 text-xs font-bold rounded-full px-3 py-1.5 focus:outline-none shadow-sm appearance-none">
                 <option value="">所有國家</option>
                 {availableCountries.map(c => <option key={c as string} value={c as string}>{c as string}</option>)}
@@ -404,6 +408,7 @@ export default function Home() {
         </>
       )}
 
+      {/* === ⚙️ 設定面板 === */}
       {activeMainTab.id === '設定' ? (
         <div className="px-6 space-y-6 mt-6 animate-fade-in">
           <div className="bg-white rounded-[2rem] p-6 flex items-center shadow-sm border border-gray-50">
@@ -416,12 +421,15 @@ export default function Home() {
           </div>
         </div>
       ) : activeMainTab.id === '行程曆' ? (
+        // === 📅 行程曆面板 ===
         <div className="px-6 space-y-4 animate-fade-in">
-          {!tripData?.settings || isEditingTrip ? (
+          
+          {/* 行程列表與編輯模式判定 */}
+          {isEditingTrip ? (
             <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
               <div className="flex justify-between items-center mb-4">
-                <h2 className="font-black text-xl text-[#585C64]">✈️ {isEditingTrip ? '修改行程設定' : '新增專屬行程'}</h2>
-                {isEditingTrip && <button onClick={() => setIsEditingTrip(false)} className="text-gray-400 hover:bg-gray-100 p-1.5 rounded-full"><X size={18}/></button>}
+                <h2 className="font-black text-xl text-[#585C64]">✈️ {activeTripId ? '修改行程設定' : '新增專屬行程'}</h2>
+                <button onClick={() => setIsEditingTrip(false)} className="text-gray-400 hover:bg-gray-100 p-1.5 rounded-full"><X size={18}/></button>
               </div>
               <div className="space-y-4">
                 <input type="text" placeholder="行程名稱 (例: 2026 韓國自由行)" value={tripForm.name} onChange={e=>setTripForm({...tripForm, name: e.target.value})} className="w-full bg-gray-50 p-3 rounded-xl border border-gray-100 outline-none font-bold text-sm text-gray-600" />
@@ -430,6 +438,7 @@ export default function Home() {
                   <div><label className="text-xs font-bold text-gray-400">回程</label><input type="date" value={tripForm.endDate} onChange={e=>setTripForm({...tripForm, endDate: e.target.value})} className="w-full bg-gray-50 p-3 rounded-xl border border-gray-100 outline-none mt-1 text-xs font-bold text-gray-600" /></div>
                 </div>
                 
+                {/* 航班與住宿 (省略部分繁瑣代碼，保留你的原結構) */}
                 <div className="border-t border-gray-100 pt-3">
                   <div className="flex justify-between items-center mb-2">
                     <label className="text-xs font-bold text-blue-400 flex items-center"><Send size={14} className="mr-1"/> 航班資訊</label>
@@ -438,14 +447,10 @@ export default function Home() {
                   {tripForm.flights.map((flight, idx) => (
                     <div key={idx} className="bg-blue-50/50 p-3 rounded-xl border border-blue-50 mb-2 relative group">
                       <button onClick={() => setTripForm({...tripForm, flights: tripForm.flights.filter((_, i) => i !== idx)})} className="absolute top-2 right-2 text-red-300 hover:text-red-500"><X size={14}/></button>
-                      
-                      <div className="mb-2 pr-6">
-                        <input type="text" placeholder="航班號 (例: CX410)" value={flight.flightNo || ''} onChange={e=>{const f=[...tripForm.flights]; f[idx].flightNo=e.target.value; setTripForm({...tripForm, flights: f})}} className="w-full bg-white p-2 text-xs font-bold text-blue-600 rounded-lg border border-blue-100 outline-none placeholder:font-normal"/>
-                      </div>
-                      
+                      <div className="mb-2 pr-6"><input type="text" placeholder="航班號 (例: CX410)" value={flight.flightNo} onChange={e=>{const f=[...tripForm.flights]; f[idx].flightNo=e.target.value; setTripForm({...tripForm, flights: f})}} className="w-full bg-white p-2 text-xs font-bold text-blue-600 rounded-lg border border-blue-100 outline-none"/></div>
                       <div className="grid grid-cols-2 gap-2 mb-2">
-                        <input type="text" placeholder="出發機場/代碼" value={flight.depAir} onChange={e=>{const f=[...tripForm.flights]; f[idx].depAir=e.target.value; setTripForm({...tripForm, flights: f})}} className="bg-white p-2 text-xs rounded-lg border border-blue-100 outline-none"/>
-                        <input type="text" placeholder="到達機場/代碼" value={flight.arrAir} onChange={e=>{const f=[...tripForm.flights]; f[idx].arrAir=e.target.value; setTripForm({...tripForm, flights: f})}} className="bg-white p-2 text-xs rounded-lg border border-blue-100 outline-none"/>
+                        <input type="text" placeholder="出發機場" value={flight.depAir} onChange={e=>{const f=[...tripForm.flights]; f[idx].depAir=e.target.value; setTripForm({...tripForm, flights: f})}} className="bg-white p-2 text-xs rounded-lg border border-blue-100 outline-none"/>
+                        <input type="text" placeholder="到達機場" value={flight.arrAir} onChange={e=>{const f=[...tripForm.flights]; f[idx].arrAir=e.target.value; setTripForm({...tripForm, flights: f})}} className="bg-white p-2 text-xs rounded-lg border border-blue-100 outline-none"/>
                       </div>
                       <div className="grid grid-cols-2 gap-2">
                         <input type="datetime-local" value={flight.depTime} onChange={e=>{const f=[...tripForm.flights]; f[idx].depTime=e.target.value; setTripForm({...tripForm, flights: f})}} className="bg-white p-2 text-[10px] font-bold text-gray-500 rounded-lg border border-blue-100 outline-none"/>
@@ -469,28 +474,56 @@ export default function Home() {
                 </div>
 
                 <button onClick={saveTripSettings} className="w-full py-4 bg-[#D1D9E6] hover:bg-[#b0bdxd] text-white rounded-xl font-bold active:scale-95 transition-all shadow-sm mt-4">
-                  {isEditingTrip ? '儲存修改' : '建立行程'}
+                  {activeTripId ? '儲存修改' : '建立行程'}
                 </button>
               </div>
             </div>
-          ) : !selectedDate ? (
-            <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 animate-fade-in relative">
-              <div className="absolute top-4 right-4 flex gap-2">
-                <button onClick={shareTripAsImage} disabled={isGeneratingImage} className="p-2 bg-blue-50 text-blue-500 hover:bg-blue-100 rounded-full shadow-sm" title="分享行程為圖片">
-                  {isGeneratingImage ? <Clock size={16} className="animate-spin" /> : <Share2 size={16}/>}
-                </button>
-                <button onClick={openEditTrip} className="p-2 bg-gray-50 text-gray-500 hover:bg-gray-100 rounded-full shadow-sm" title="編輯設定"><Edit3 size={16}/></button>
-                <button onClick={() => { if(confirm("確定徹底刪除此行程表？")) setDoc(doc(db, 'appData', 'currentTrip'), { settings: null, schedule: {} }) }} className="p-2 bg-red-50 text-red-500 hover:bg-red-100 rounded-full shadow-sm"><Trash2 size={16}/></button>
+          ) : !activeTripId ? (
+            // 🌟 行程總覽清單 (多行程視圖)
+            <div className="animate-fade-in">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-black text-[#585C64]">我的行程清單</h2>
+                <button onClick={openNewTrip} className="bg-[#D1D9E6] text-white px-4 py-2 rounded-full text-sm font-bold shadow-sm">+ 新增行程</button>
               </div>
               
-              <div className="mb-6 pb-6 border-b border-gray-100 pr-24">
-                <h2 className="text-2xl font-black text-[#585C64] mb-2">{tripData.settings.name}</h2>
-                <p className="text-sm text-gray-400 font-bold flex items-center gap-1"><CalendarIcon size={16}/> {tripData.settings.startDate} ~ {tripData.settings.endDate}</p>
+              {trips.length === 0 ? (
+                <div className="bg-white rounded-3xl p-8 text-center shadow-sm min-h-[200px] flex flex-col items-center justify-center">
+                  <div className="text-4xl mb-3">✈️</div>
+                  <p className="text-gray-400 text-sm">還沒有任何行程，快來建立一趟旅行吧！</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {trips.map(trip => (
+                    <div key={trip.id} onClick={() => setActiveTripId(trip.id)} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-50 flex items-center justify-between cursor-pointer hover:shadow-md transition-all active:scale-95 group">
+                      <div>
+                        <h3 className="font-black text-lg text-[#585C64] mb-1">{trip.settings?.name}</h3>
+                        <p className="text-xs text-gray-400 font-bold"><CalendarIcon size={12} className="inline mr-1"/>{trip.settings?.startDate} ~ {trip.settings?.endDate}</p>
+                      </div>
+                      <button onClick={(e) => { e.stopPropagation(); deleteTrip(trip.id); }} className="p-2 text-red-300 hover:bg-red-50 hover:text-red-500 rounded-full transition-colors opacity-0 group-hover:opacity-100">
+                        <Trash2 size={16}/>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : !selectedDate ? (
+            // 🌟 單一行程詳細 (月曆與資訊)
+            <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 animate-fade-in relative">
+              <button onClick={() => setActiveTripId(null)} className="absolute top-4 left-4 p-2 bg-gray-50 text-gray-500 hover:bg-gray-100 rounded-full"><ArrowLeft size={16}/></button>
+              <div className="absolute top-4 right-4 flex gap-2">
+                <button onClick={shareTripAsImage} disabled={isGeneratingImage} className="p-2 bg-blue-50 text-blue-500 hover:bg-blue-100 rounded-full shadow-sm"><Share2 size={16}/></button>
+                <button onClick={openEditTrip} className="p-2 bg-gray-50 text-gray-500 hover:bg-gray-100 rounded-full shadow-sm"><Edit3 size={16}/></button>
+              </div>
+              
+              <div className="mb-6 pb-6 border-b border-gray-100 mt-10">
+                <h2 className="text-2xl font-black text-[#585C64] mb-2">{activeTrip.settings.name}</h2>
+                <p className="text-sm text-gray-400 font-bold flex items-center gap-1"><CalendarIcon size={16}/> {activeTrip.settings.startDate} ~ {activeTrip.settings.endDate}</p>
                 
-                {tripData.settings.flights?.length > 0 && (
+                {activeTrip.settings.flights?.length > 0 && (
                   <div className="mt-3">
                     <p className="text-xs text-blue-400 font-black mb-1">✈️ 航班資訊</p>
-                    {tripData.settings.flights.map((f:any, idx:number) => (
+                    {activeTrip.settings.flights.map((f:any, idx:number) => (
                       <p key={idx} className="text-[10px] text-gray-500 font-mono bg-blue-50/50 p-1.5 rounded-lg mb-1 flex items-center flex-wrap gap-1">
                         {f.flightNo && <span className="font-black text-blue-600 bg-white px-1.5 py-0.5 rounded shadow-sm">{f.flightNo}</span>}
                         {f.depAir} ({f.depTime?.split('T')[1] || '待定'}) ➔ {f.arrAir} ({f.arrTime?.split('T')[1] || '待定'})
@@ -498,10 +531,10 @@ export default function Home() {
                     ))}
                   </div>
                 )}
-                {tripData.settings.hotels?.length > 0 && (
+                {activeTrip.settings.hotels?.length > 0 && (
                   <div className="mt-3">
                     <p className="text-xs text-pink-400 font-black mb-1">🏨 住宿資訊</p>
-                    {tripData.settings.hotels.map((h:string, idx:number) => (
+                    {activeTrip.settings.hotels.map((h:string, idx:number) => (
                       <p key={idx} className="text-[10px] text-gray-500 bg-pink-50/50 p-1.5 rounded-lg mb-1 truncate">{h}</p>
                     ))}
                   </div>
@@ -510,9 +543,9 @@ export default function Home() {
               
               <h3 className="font-bold text-gray-500 mb-4 text-sm">點擊日期規劃每日行程 👇</h3>
               <div className="grid grid-cols-4 gap-2">
-                {getDaysArray().map((date, idx) => {
+                {getDaysArray(activeTrip).map((date, idx) => {
                   const d = new Date(date);
-                  const taskCount = tripData.schedule?.[date]?.length || 0;
+                  const taskCount = activeTrip.schedule?.[date]?.length || 0;
                   return (
                     <div key={date} onClick={() => setSelectedDate(date)} className="aspect-square bg-[#F9F7F7] rounded-2xl flex flex-col items-center justify-center border border-gray-100 cursor-pointer hover:border-[#D1D9E6] active:scale-95 transition-all relative overflow-hidden">
                       <span className="text-[10px] font-bold text-gray-400 mb-1">Day {idx+1}</span>
@@ -524,6 +557,7 @@ export default function Home() {
               </div>
             </div>
           ) : (
+            // 🌟 單日時間軸 Timeline
             <div className="animate-fade-in">
               <div className="flex items-center gap-3 mb-6 bg-white p-4 rounded-3xl shadow-sm border border-gray-100">
                 <button onClick={() => setSelectedDate(null)} className="p-2 bg-gray-50 rounded-full text-gray-500"><ChevronLeft size={20}/></button>
@@ -534,7 +568,7 @@ export default function Home() {
               </div>
 
               <div className="relative border-l-2 border-[#D1D9E6] ml-6 mb-8 space-y-5">
-                {(tripData.schedule?.[selectedDate] || []).map((item: any) => (
+                {(activeTrip?.schedule?.[selectedDate] || []).map((item: any) => (
                   <div key={item.id} className="relative pl-6">
                     <div className="absolute -left-[11px] top-1.5 w-5 h-5 bg-[#D1D9E6] rounded-full border-4 border-[#F9F7F7]"></div>
                     <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-50 flex justify-between items-start group">
@@ -542,7 +576,6 @@ export default function Home() {
                         <span className="text-xs font-black text-[#FFB6C1] bg-pink-50 px-2 py-1 rounded-md tracking-wider">{item.time}</span>
                         <span className="text-[10px] font-bold text-gray-400 ml-2 border border-gray-200 px-1.5 py-0.5 rounded">{item.type}</span>
                         <p className="font-bold text-[#585C64] mt-2 mb-1 leading-snug">{item.task}</p>
-                        
                         {item.link && (
                           <a href={item.link} target="_blank" rel="noreferrer" className="inline-flex items-center text-[10px] font-bold text-blue-500 hover:text-blue-600 bg-blue-50 px-2 py-1 rounded-md mt-1">
                             <MapPin size={10} className="mr-1"/> 查看地點/詳情
@@ -553,7 +586,7 @@ export default function Home() {
                     </div>
                   </div>
                 ))}
-                {(!tripData.schedule?.[selectedDate] || tripData.schedule[selectedDate].length === 0) && <p className="pl-6 text-gray-400 text-sm font-medium pt-2">這天還沒有行程唷，趕快新增吧！</p>}
+                {(!activeTrip?.schedule?.[selectedDate] || activeTrip.schedule[selectedDate].length === 0) && <p className="pl-6 text-gray-400 text-sm font-medium pt-2">這天還沒有行程唷，趕快新增吧！</p>}
               </div>
 
               <div className="bg-white p-5 rounded-3xl shadow-sm border border-gray-100">
@@ -578,6 +611,7 @@ export default function Home() {
           )}
         </div>
       ) : (
+        // === 🌟 拔草 / 種草 列表 (兩欄瀑布流排版) ===
         <div className="px-6 space-y-4">
           {isLoading ? (
             <div className="text-center text-gray-400 py-10 animate-pulse">魔法載入中... 🪄</div>
@@ -586,53 +620,29 @@ export default function Home() {
               <div className="text-4xl mb-3">🪹</div>
               <p className="text-gray-400 text-sm">這裡還空空的唷，快點擊右下角新增吧！</p>
             </div>
+          ) : activeMainTab.id === '拔草' ? (
+            // 🌟 拔草特有：左右兩欄 (推薦 vs 避雷)
+            <div className="flex gap-3 items-start animate-fade-in">
+              {/* 👍 左欄：推薦 */}
+              <div className="flex-1 space-y-3">
+                <div className="sticky top-0 bg-[#F9F7F7] py-2 z-10 flex items-center justify-center gap-1 font-black text-pink-500 text-[13px] border-b-2 border-pink-200">
+                  <ThumbsUp size={14}/> 推薦清單
+                </div>
+                {filteredEntries.filter(e => e.tags?.recommendation !== 'not_recommend').map(item => renderItemCard(item, true))}
+              </div>
+              
+              {/* 👎 右欄：避雷 */}
+              <div className="flex-1 space-y-3">
+                <div className="sticky top-0 bg-[#F9F7F7] py-2 z-10 flex items-center justify-center gap-1 font-black text-gray-500 text-[13px] border-b-2 border-gray-200">
+                  <ThumbsDown size={14}/> 避雷清單
+                </div>
+                {filteredEntries.filter(e => e.tags?.recommendation === 'not_recommend').map(item => renderItemCard(item, true))}
+              </div>
+            </div>
           ) : (
+            // 🌟 種草：維持一欄完整顯示
             <AnimatePresence>
-              {filteredEntries.map((item) => (
-                <motion.div key={item.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }} onClick={() => setSelectedEntry(item)} className="bg-white rounded-2xl p-4 shadow-sm flex space-x-4 items-center border border-gray-50 cursor-pointer hover:shadow-md transition-shadow relative overflow-hidden group">
-                  <div className="w-20 h-20 rounded-xl bg-gray-100 flex-shrink-0 overflow-hidden relative">
-                    {item.images && item.images.length > 0 ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={item.images[0]} alt="縮圖" className="w-full h-full object-cover" />
-                    ) : <div className="w-full h-full flex items-center justify-center text-gray-300 text-2xl">🩰</div>}
-                    {item.images?.length > 1 && <span className="absolute bottom-1 right-1 bg-black/50 text-white text-[10px] px-1.5 rounded-sm">+{item.images.length-1}</span>}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                  <h3 className="font-bold text-[#585C64] truncate mb-1">{item.title}</h3>
-                   <div className="flex flex-wrap gap-1.5 mb-2 mt-1">
-    {/* ✨ 這裡新增了首頁的 推/不推 標籤 ✨ */}
-    {item.type === 'done' && item.tags?.recommendation === 'recommend' && (
-      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-pink-100 text-pink-600">
-        <ThumbsUp size={10} className="mr-1"/> 推薦
-      </span>
-    )}
-    {item.type === 'done' && item.tags?.recommendation === 'not_recommend' && (
-      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-gray-200 text-gray-600">
-        <ThumbsDown size={10} className="mr-1"/> 避雷
-      </span>
-    )}
-
-    {item.tags?.region && <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-500">{item.tags.region}</span>}
-    {item.tags?.dishType && <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-gray-100 text-gray-600">{item.tags.dishType}</span>}
-    {item.rating && <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-yellow-50 text-yellow-600"><Star size={10} className="mr-1" fill="currentColor"/> {item.rating}.0</span>}
-  </div>
-</div>
-                  
-                  {tripData?.settings && (
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); setAddingToTripEntry(item); }} 
-                      className="absolute top-3 right-12 w-8 h-8 rounded-full bg-indigo-50 text-indigo-500 flex items-center justify-center hover:bg-indigo-100 transition-colors z-10 opacity-100 sm:opacity-0 group-hover:opacity-100 shadow-sm"
-                      title="加入行程"
-                    >
-                      <CalendarIcon size={14} />
-                    </button>
-                  )}
-
-                  <button onClick={(e) => handleToggleStatus(e, item)} className={`absolute top-3 right-3 w-8 h-8 rounded-full border-2 flex items-center justify-center transition-all shadow-sm z-10 shrink-0 ${item.type === 'done' ? 'bg-[#FFB6C1] border-[#FFB6C1] text-white' : 'border-[#F3E0E2] text-gray-300 hover:text-pink-400'}`}>
-                    <CheckSquare size={14} strokeWidth={2.5} />
-                  </button>
-                </motion.div>
-              ))}
+              {filteredEntries.map(item => renderItemCard(item, false))}
             </AnimatePresence>
           )}
         </div>
@@ -650,12 +660,23 @@ export default function Home() {
               
               <div className="space-y-4">
                 <div>
-                  <label className="block text-xs font-bold text-gray-500 mb-1.5">選擇日期</label>
-                  <select value={addToTripDate} onChange={e=>setAddToTripDate(e.target.value)} className="w-full bg-gray-50 border border-gray-100 rounded-xl p-3 text-sm font-bold text-gray-700 outline-none">
-                    <option value="" disabled>請選擇行程天數</option>
-                    {getDaysArray().map((d, i) => <option key={d} value={d}>Day {i+1} ({d})</option>)}
+                  <label className="block text-xs font-bold text-gray-500 mb-1.5">選擇要加入的行程</label>
+                  <select value={addToTripId} onChange={e=>setAddToTripId(e.target.value)} className="w-full bg-indigo-50 border border-indigo-100 rounded-xl p-3 text-sm font-bold text-indigo-600 outline-none">
+                    <option value="" disabled>請選擇您的行程</option>
+                    {trips.map(t => <option key={t.id} value={t.id}>{t.settings?.name}</option>)}
                   </select>
                 </div>
+                
+                {addToTripId && (
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 mb-1.5">選擇日期</label>
+                    <select value={addToTripDate} onChange={e=>setAddToTripDate(e.target.value)} className="w-full bg-gray-50 border border-gray-100 rounded-xl p-3 text-sm font-bold text-gray-700 outline-none">
+                      <option value="" disabled>請選擇行程天數</option>
+                      {getDaysArray(trips.find(t => t.id === addToTripId)).map((d, i) => <option key={d} value={d}>Day {i+1} ({d})</option>)}
+                    </select>
+                  </div>
+                )}
+                
                 <div>
                   <label className="block text-xs font-bold text-gray-500 mb-1.5">預定時間</label>
                   <input type="time" value={addToTripTime} onChange={e=>setAddToTripTime(e.target.value)} className="w-full bg-gray-50 border border-gray-100 rounded-xl p-3 text-sm font-bold text-gray-700 outline-none" />
@@ -670,12 +691,14 @@ export default function Home() {
         )}
       </AnimatePresence>
 
+      {/* Floating Add Button */}
       {activeMainTab.id !== '設定' && activeMainTab.id !== '行程曆' && (
         <button onClick={() => { setEditEntry(null); setIsModalOpen(true); }} className="fixed bottom-28 right-6 w-14 h-14 bg-[#FFB6C1] rounded-full shadow-[0_5px_15px_rgba(255,182,193,0.5)] flex items-center justify-center text-white text-3xl hover:bg-pink-400 transition-colors z-40">
           <Plus size={28} />
         </button>
       )}
 
+      {/* Bottom Nav */}
       <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white/80 backdrop-blur-xl border-t border-gray-50 pb-6 pt-3 px-6 z-40 rounded-t-3xl shadow-[0_-10px_40px_rgba(0,0,0,0.03)]">
         <div className="flex justify-between items-center">
           {MAIN_TABS.map((tab) => {
@@ -691,15 +714,17 @@ export default function Home() {
         </div>
       </nav>
 
+      {/* Entry Modal */}
       <EntryModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} editData={editEntry} currentMainTab={activeMainTab.id} currentSubTab={activeSubTab.value} entries={entries} />
 
+      {/* 🌟 Entry Detail Modal (加入國旗與營業時間) */}
       <AnimatePresence>
         {selectedEntry && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
             <motion.div initial={{ opacity: 0, scale: 0.9, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.9, y: 20 }} className="bg-white w-full max-w-sm rounded-[2rem] overflow-hidden shadow-2xl relative flex flex-col max-h-[85vh]">
               <div className="absolute top-4 right-4 z-10 flex space-x-2">
-                {tripData?.settings && (
-                  <button onClick={() => setAddingToTripEntry(selectedEntry)} className="w-9 h-9 bg-indigo-500/90 backdrop-blur-md rounded-full text-white flex items-center justify-center shadow-sm"><CalendarIcon size={14} /></button>
+                {trips.length > 0 && (
+                  <button onClick={() => { setAddingToTripEntry(selectedEntry); setAddToTripId(trips[0].id); }} className="w-9 h-9 bg-indigo-500/90 backdrop-blur-md rounded-full text-white flex items-center justify-center shadow-sm"><CalendarIcon size={14} /></button>
                 )}
                 <button onClick={() => shareReview(selectedEntry)} className="w-9 h-9 bg-white/80 backdrop-blur-md rounded-full text-indigo-500 flex items-center justify-center shadow-sm"><Share2 size={16} /></button>
                 <button onClick={() => handleEdit(selectedEntry)} className="w-9 h-9 bg-white/80 backdrop-blur-md rounded-full text-blue-500 flex items-center justify-center shadow-sm"><Edit3 size={16} /></button>
@@ -716,12 +741,14 @@ export default function Home() {
                 ) : <div className="w-full h-full flex items-center justify-center text-4xl text-gray-300 flex-shrink-0">🩰</div>}
               </div>
 
-              <div className="p-6 overflow-y-auto bg-white">
+              <div className="p-6 overflow-y-auto bg-white custom-scrollbar">
                 <div className="mb-6">
                   <h2 className="text-2xl font-black text-[#585C64] mb-3 leading-snug tracking-wide">{selectedEntry.title}</h2>
                   <div className="flex flex-wrap gap-2">
-                    {selectedEntry.tags?.region && <span className="px-3 py-1 rounded-full text-[11px] font-bold bg-blue-50 text-blue-500 tracking-wider">{selectedEntry.tags.region}</span>}
-                    {selectedEntry.tags?.dishType && <span className="px-3 py-1 rounded-full text-[11px] font-bold bg-gray-100 text-gray-500 tracking-wider">{selectedEntry.tags.dishType}</span>}
+                    {/* 🌟 國旗標籤 */}
+                    {selectedEntry.tags?.country && <span className="px-3 py-1 rounded-full text-[11px] font-bold bg-pink-50 text-pink-500 tracking-wider shadow-sm border border-pink-100">{getFlagEmoji(selectedEntry.tags.country)} {selectedEntry.tags.country}</span>}
+                    {selectedEntry.tags?.region && <span className="px-3 py-1 rounded-full text-[11px] font-bold bg-blue-50 text-blue-500 tracking-wider shadow-sm">{selectedEntry.tags.region}</span>}
+                    {selectedEntry.tags?.dishType && <span className="px-3 py-1 rounded-full text-[11px] font-bold bg-gray-100 text-gray-500 tracking-wider shadow-sm">{selectedEntry.tags.dishType}</span>}
                   </div>
                 </div>
 
@@ -742,7 +769,28 @@ export default function Home() {
                   </div>
                 )}
 
-                <div className="bg-[#F9F7F7] rounded-2xl p-5 space-y-5 mb-6 border border-gray-100">
+                <div className="bg-[#F9F7F7] rounded-2xl p-5 space-y-4 mb-6 border border-gray-100">
+                  {/* 🌟 營業時間 */}
+                  {selectedEntry.businessHours && (
+                    <div className="flex items-start">
+                      <div className="w-8 h-8 rounded-full bg-green-100 text-green-600 flex items-center justify-center shrink-0 mr-3 mt-0.5"><Clock size={14}/></div>
+                      <div>
+                        <p className="text-[10px] font-bold text-gray-400 mb-0.5 tracking-widest">營業時間</p>
+                        <p className="text-sm font-bold text-[#585C64] leading-relaxed">{selectedEntry.businessHours}</p>
+                      </div>
+                    </div>
+                  )}
+                  {/* 🌟 休息日 */}
+                  {selectedEntry.tags?.closedDays && selectedEntry.tags.closedDays.length > 0 && (
+                    <div className="flex items-start">
+                      <div className="w-8 h-8 rounded-full bg-red-100 text-red-500 flex items-center justify-center shrink-0 mr-3 mt-0.5"><CalendarIcon size={14}/></div>
+                      <div>
+                        <p className="text-[10px] font-bold text-gray-400 mb-0.5 tracking-widest">公休日</p>
+                        <p className="text-sm font-bold text-red-500 leading-relaxed">每週 {selectedEntry.tags.closedDays.join('、')} 休息</p>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="flex items-start">
                     <div className="w-8 h-8 rounded-full bg-pink-100 text-pink-500 flex items-center justify-center shrink-0 mr-3 mt-0.5"><MapPin size={14}/></div>
                     <div>
